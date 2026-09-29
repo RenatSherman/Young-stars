@@ -5,19 +5,17 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>АК БАРС — Система развития</title>
 
-<!-- Внешние библиотеки (CDN) -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
-<!-- Стили -->
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
 
-<!-- ===================== ЭКРАН АВТОРИЗАЦИИ ===================== -->
+<!-- ЭКРАН АВТОРИЗАЦИИ -->
 <div id="auth-screen" class="active">
   <div class="auth-card">
     <div class="auth-logo">
@@ -47,15 +45,17 @@
   </div>
 </div>
 
-<!-- ===================== ШАПКА ===================== -->
+<!-- ШАПКА -->
 <header>
   <div class="logo" onclick="goHome()" title="К списку игроков">
     <div>АК БАРС<small>Система развития · 1956</small></div>
   </div>
   <nav>
     <button data-screen="dashboard">Дашборд</button>
+    <button data-screen="coach-calendar">Календарь тренера</button>
+    <button data-screen="coach-report">Отчёт тренера</button>
     <button data-screen="players" class="active">Игроки</button>
-    <button data-screen="report">Отчёт</button>
+    <button data-screen="report">Отчёт по игрокам</button>
     <button data-screen="compare">Сравнение</button>
     <button data-screen="exercises">Упражнения</button>
     <button data-screen="data">Данные</button>
@@ -69,12 +69,23 @@
 </header>
 <div class="notif-panel" id="notif-panel"></div>
 
-<!-- ===================== ОСНОВНЫЕ ЭКРАНЫ ===================== -->
 <main>
   <section id="screen-dashboard" class="screen">
     <h1>Дашборд тренера</h1>
     <p class="subtitle">Сводка по группе развития · Сезон 2026/2027</p>
     <div id="dashboard-content"></div>
+  </section>
+
+  <section id="screen-coach-calendar" class="screen">
+    <h1>Календарь тренера</h1>
+    <p class="subtitle">Общее расписание всех игроков · Нажмите на ячейку, чтобы назначить тренировку</p>
+    <div id="coach-calendar-content"></div>
+  </section>
+
+  <section id="screen-coach-report" class="screen">
+    <h1>Отчёт тренера</h1>
+    <p class="subtitle">Сводка по тренировкам за месяц · Графики, тепловая карта, экспорт в PDF</p>
+    <div id="coach-report-content"></div>
   </section>
 
   <section id="screen-players" class="screen active">
@@ -209,13 +220,10 @@
   </section>
 </main>
 
-<!-- ===================== МОДАЛКА ===================== -->
 <div class="modal-bg" id="modal-bg"><div class="modal" id="modal-content"></div></div>
-
-<!-- Скрытый контейнер для PDF-рендера -->
 <div id="pdf-stage"></div>
 
-<!-- ===================== СКРИПТЫ (порядок важен!) ===================== -->
+<!-- СКРИПТЫ -->
 <script src="01-config.js"></script>
 <script src="02-utils.js"></script>
 <script src="03-sync.js"></script>
@@ -225,6 +233,8 @@
 <script src="07-calendar.js"></script>
 <script src="08-pdf.js"></script>
 <script src="09-excel.js"></script>
+<script src="11-dashboard-calendar.js"></script>
+<script src="12-coach-report.js"></script>
 <script src="10-init.js"></script>
 </body>
 </html>

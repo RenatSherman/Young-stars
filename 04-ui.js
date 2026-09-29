@@ -19,17 +19,18 @@ function showScreen(name) {
     if (b.dataset.screen) b.classList.toggle('active', b.dataset.screen === name);
   });
 
-  if (name === 'players')    renderPlayers();
-  if (name === 'exercises')  renderExercises();
-  if (name === 'dashboard')  renderDashboard();
-  if (name === 'compare')    renderCompare();
-  if (name === 'report')     renderReport();
+  if (name === 'players')          renderPlayers();
+  if (name === 'exercises')        renderExercises();
+  if (name === 'dashboard')        renderDashboard();
+  if (name === 'compare')          renderCompare();
+  if (name === 'report')           renderReport();
+  if (name === 'coach-calendar')   renderCoachCalendar();
+  if (name === 'coach-report')     renderCoachReport();
 
   document.getElementById('notif-panel').classList.remove('active');
   window.scrollTo(0, 0);
 }
 
-/* Навешивание обработчиков на кнопки меню */
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('nav button').forEach(btn => {
     if (btn.dataset.screen) {
@@ -38,7 +39,7 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 });
 
-/* ===== Миграция старого формата календаря (по неделям → по датам) ===== */
+/* ===== Миграция старого формата календаря ===== */
 function migrateCalendar(p) {
   if (!p.calendar) { p.calendar = {}; return; }
   const newCal = {};
@@ -125,7 +126,6 @@ function toggleNotif(e) {
   panel.classList.add('active');
 }
 
-/* Закрытие панели уведомлений по клику вне */
 document.addEventListener('click', e => {
   const panel = document.getElementById('notif-panel');
   if (!panel.contains(e.target) && !e.target.closest('.notif-btn')) {
@@ -165,7 +165,17 @@ function renderPlayers() {
 function renderDashboard() {
   const el = document.getElementById('dashboard-content');
   if (!DB.players.length) {
-    el.innerHTML = '<div class="empty-state"><div class="big">📊</div><p>Нет данных.</p></div>';
+    el.innerHTML = `
+      <div class="card">
+        <div class="empty-state"><div class="big">📊</div><p>Нет данных.</p></div>
+      </div>
+      <div class="card">
+        <h2>Быстрые переходы</h2>
+        <div class="btn-row" style="margin:0">
+          <button class="btn" onclick="showScreen('coach-calendar')">📅 Календарь тренера</button>
+          <button class="btn btn-red" onclick="showScreen('coach-report')">📊 Отчёт тренера</button>
+        </div>
+      </div>`;
     return;
   }
 
@@ -184,6 +194,15 @@ function renderDashboard() {
   const upcoming = collectNotifications().filter(i => i.type !== 'overdue').slice(0, 10);
 
   el.innerHTML = `
+    <div class="card" style="border-top-color:var(--ak-red)">
+      <h2>Быстрые переходы</h2>
+      <div class="btn-row" style="margin:0">
+        <button class="btn" onclick="showScreen('coach-calendar')">📅 Календарь тренера</button>
+        <button class="btn btn-red" onclick="showScreen('coach-report')">📊 Отчёт тренера</button>
+        <button class="btn btn-ghost" onclick="showScreen('report')">📄 Отчёт по игрокам</button>
+      </div>
+    </div>
+
     <div class="dash-grid">
       <div class="kpi"><div class="lbl">Игроков</div><div class="val">${n}</div><div class="sub">в группе развития</div></div>
       <div class="kpi red"><div class="lbl">Средняя общая</div><div class="val">${avgOverall}</div><div class="sub">из 10 баллов</div></div>
