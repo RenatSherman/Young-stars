@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>АК БАРС — Система развития</title>
+
+<!-- Внешние библиотеки (CDN) -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+<!-- Стили -->
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<!-- ===================== ЭКРАН АВТОРИЗАЦИИ ===================== -->
+<div id="auth-screen" class="active">
+  <div class="auth-card">
+    <div class="auth-logo">
+      <div class="text">АК БАРС<small>Система развития</small></div>
+    </div>
+    <div class="auth-tabs">
+      <button id="tab-login" class="active" onclick="switchAuthTab('login')">Вход</button>
+      <button id="tab-register" onclick="switchAuthTab('register')">Регистрация</button>
+    </div>
+    <div id="auth-error" class="auth-error"></div>
+    <div id="auth-info" class="auth-info"></div>
+    <div id="auth-form-login">
+      <div class="auth-field"><label>Email</label><input type="email" id="login-email" placeholder="coach@example.com" autocomplete="email"></div>
+      <div class="auth-field"><label>Пароль</label><input type="password" id="login-password" placeholder="••••••••" autocomplete="current-password" onkeypress="if(event.key==='Enter')doLogin()"></div>
+      <button class="btn btn-block" onclick="doLogin()">Войти</button>
+    </div>
+    <div id="auth-form-register" style="display:none">
+      <div class="auth-field"><label>Email</label><input type="email" id="reg-email" placeholder="coach@example.com" autocomplete="email"></div>
+      <div class="auth-field"><label>Пароль (минимум 6 символов)</label><input type="password" id="reg-password" placeholder="••••••••" autocomplete="new-password"></div>
+      <div class="auth-field"><label>Повторите пароль</label><input type="password" id="reg-password2" placeholder="••••••••" autocomplete="new-password" onkeypress="if(event.key==='Enter')doRegister()"></div>
+      <button class="btn btn-block btn-red" onclick="doRegister()">Зарегистрироваться</button>
+    </div>
+    <div id="auth-loading" class="auth-loading">
+      <div class="spinner"></div>
+      <div>Загрузка данных…</div>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== ШАПКА ===================== -->
+<header>
+  <div class="logo" onclick="goHome()" title="К списку игроков">
+    <div>АК БАРС<small>Система развития · 1956</small></div>
+  </div>
+  <nav>
+    <button data-screen="dashboard">Дашборд</button>
+    <button data-screen="players" class="active">Игроки</button>
+    <button data-screen="report">Отчёт</button>
+    <button data-screen="compare">Сравнение</button>
+    <button data-screen="exercises">Упражнения</button>
+    <button data-screen="data">Данные</button>
+    <button class="notif-btn" onclick="toggleNotif(event)">🔔<span id="notif-badge" class="notif-badge" style="display:none">0</span></button>
+    <div class="sync-status" id="sync-status"><span class="dot"></span><span id="sync-text">Готово</span></div>
+    <div class="user-pill">
+      <span class="email" id="user-email">—</span>
+      <button onclick="doLogout()">Выйти</button>
+    </div>
+  </nav>
+</header>
+<div class="notif-panel" id="notif-panel"></div>
+
+<!-- ===================== ОСНОВНЫЕ ЭКРАНЫ ===================== -->
+<main>
+  <section id="screen-dashboard" class="screen">
+    <h1>Дашборд тренера</h1>
+    <p class="subtitle">Сводка по группе развития · Сезон 2026/2027</p>
+    <div id="dashboard-content"></div>
+  </section>
+
+  <section id="screen-players" class="screen active">
+    <div class="flex-between">
+      <div><h1>Игроки</h1><p class="subtitle">Группа развития · Академия «Ак Барс»</p></div>
+      <div class="btn-row" style="margin:0">
+        <button class="btn btn-ghost" onclick="importPlayerFromExcel()">📥 Игрок из Excel</button>
+        <button class="btn" onclick="addPlayer()">+ Добавить игрока</button>
+      </div>
+    </div>
+    <div id="players-list" class="players-grid"></div>
+  </section>
+
+  <section id="screen-player" class="screen">
+    <div class="btn-row no-print">
+      <button class="btn-ghost btn" onclick="showScreen('players')">← К списку</button>
+      <button class="btn btn-red" onclick="exportPlayerToPDF(currentPlayerId)">📄 Экспорт в PDF (полный)</button>
+      <button class="btn btn-ghost" onclick="exportPlayerToShortPDF(currentPlayerId)">📄 PDF (без тех/тестов/характеристики)</button>
+      <button class="btn btn-ghost" onclick="exportPlayerToExcel(currentPlayerId)">📤 Excel</button>
+      <button class="btn btn-danger" onclick="confirmDeletePlayer(currentPlayerId)" style="margin-left:auto">🗑 Удалить игрока</button>
+    </div>
+    <div id="player-card"></div>
+  </section>
+
+  <section id="screen-report" class="screen">
+    <div class="flex-between">
+      <div>
+        <h1>Отчёт по итогу месяца</h1>
+        <p class="subtitle">Выполнение плана по каждому игроку и общий процент по группе</p>
+      </div>
+      <div class="btn-row" style="margin:0">
+        <button class="btn btn-red" onclick="exportReportToPDF()">📄 Экспорт отчёта в PDF</button>
+      </div>
+    </div>
+    <div class="card no-print">
+      <div class="plan-controls" style="margin:0">
+        <label>Месяц:</label>
+        <select id="report-month" onchange="renderReport()"></select>
+        <label>Игрок:</label>
+        <select id="report-player-filter" onchange="renderReport()">
+          <option value="">Все игроки</option>
+        </select>
+      </div>
+    </div>
+    <div id="report-content"></div>
+  </section>
+
+  <section id="screen-compare" class="screen">
+    <h1>Сравнение игроков</h1>
+    <p class="subtitle">Наложение профилей навыков двух игроков</p>
+    <div class="card">
+      <div class="compare-select">
+        <label style="font-weight:900;font-size:12px;text-transform:uppercase;letter-spacing:.5px;color:var(--ak-green);font-family:var(--font-display)">Игрок 1:</label>
+        <select id="cmp-a" onchange="renderCompare()"></select>
+        <label style="font-weight:900;font-size:12px;text-transform:uppercase;letter-spacing:.5px;color:var(--ak-green);font-family:var(--font-display)">Игрок 2:</label>
+        <select id="cmp-b" onchange="renderCompare()"></select>
+      </div>
+      <div class="radar-wrap">
+        <div class="radar-box"><canvas id="cmp-radar"></canvas></div>
+        <div id="cmp-legend" class="scores-legend"></div>
+      </div>
+    </div>
+    <div class="card" id="cmp-table"></div>
+  </section>
+
+  <section id="screen-exercises" class="screen">
+    <div class="flex-between">
+      <div>
+        <h1>Справочник упражнений</h1>
+        <p class="subtitle">Нажмите на блок, чтобы раскрыть список упражнений</p>
+      </div>
+      <div class="btn-row" style="margin:0">
+        <button class="btn btn-ghost" onclick="toggleAllAccordions()" id="toggle-all-btn">Развернуть все</button>
+        <button class="btn btn-ghost" onclick="addGroup()">+ Новая группа</button>
+        <button class="btn" onclick="addExercise()">+ Упражнение</button>
+      </div>
+    </div>
+    <div id="exercises-list"></div>
+  </section>
+
+  <section id="screen-data" class="screen">
+    <h1>Управление данными</h1>
+    <p class="subtitle">Резервное копирование и перенос базы</p>
+
+    <div class="card">
+      <h3>Состояние синхронизации</h3>
+      <p style="margin-bottom:12px;color:var(--ak-gray-dark);font-size:13px">
+        Данные автоматически сохраняются в облако Supabase. Аккаунт: <strong id="data-email">—</strong>
+      </p>
+      <div class="btn-row" style="margin:0">
+        <button class="btn" onclick="manualSync()">🔄 Синхронизировать сейчас</button>
+        <button class="btn btn-ghost" onclick="forceUpload()">⬆ Загрузить в облако</button>
+        <button class="btn btn-ghost" onclick="forceDownload()">⬇ Скачать из облака</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Импорт игрока из Excel</h3>
+      <p style="margin-bottom:12px;color:var(--ak-gray-dark);font-size:13px">
+        Загрузите файл <code>.xlsx</code>. Поддерживаются исходные файлы с листами «Карточка», «Тех», «Физ, такт, псих», так и шаблоны «Паспорт», «Техника», «ФизТактПсих».
+      </p>
+      <div class="btn-row" style="margin:0">
+        <button class="btn btn-ghost" onclick="downloadTemplateExcel()">📄 Скачать шаблон</button>
+        <button class="btn" onclick="importPlayerFromExcel()">📥 Импорт игрока из Excel</button>
+      </div>
+    </div>
+
+    <div class="card"><h3>Экспорт всех данных</h3>
+      <p style="margin-bottom:12px;color:var(--ak-gray-dark);font-size:13px">Сохраните все данные в JSON-файл (резервная копия).</p>
+      <button class="btn" onclick="exportData()">💾 Экспорт в JSON</button>
+    </div>
+
+    <div class="card red-top"><h3>Импорт JSON</h3>
+      <p style="margin-bottom:12px;color:var(--ak-gray-dark);font-size:13px">Загрузите JSON. Текущие данные будут заменены и выгружены в облако.</p>
+      <input type="file" id="import-file" accept=".json" style="margin-bottom:12px">
+      <button class="btn btn-red" onclick="importData()">📂 Импорт из JSON</button>
+    </div>
+
+    <div class="card"><h3>Массовый импорт игроков из CSV</h3>
+      <p style="margin-bottom:12px;color:var(--ak-gray-dark);font-size:13px">
+        Формат: <code>ФИО;Команда;Город;Амплуа;Хват;Рост;Вес;Год рождения</code><br>
+        Первая строка — заголовки. Кодировка UTF-8.
+      </p>
+      <input type="file" id="csv-file" accept=".csv" style="margin-bottom:12px">
+      <button class="btn" onclick="importCSVFile()">📥 Загрузить CSV</button>
+    </div>
+
+    <div class="card"><h3>Опасная зона</h3>
+      <p style="margin-bottom:12px;color:var(--ak-gray-dark);font-size:13px">Полное удаление всех данных из локальной копии. Данные в облаке останутся.</p>
+      <button class="btn btn-red" onclick="clearAll()">🗑 Очистить локально</button>
+    </div>
+  </section>
+</main>
+
+<!-- ===================== МОДАЛКА ===================== -->
+<div class="modal-bg" id="modal-bg"><div class="modal" id="modal-content"></div></div>
+
+<!-- Скрытый контейнер для PDF-рендера -->
+<div id="pdf-stage"></div>
+
+<!-- ===================== СКРИПТЫ (порядок важен!) ===================== -->
+<script src="01-config.js"></script>
+<script src="02-utils.js"></script>
+<script src="03-sync.js"></script>
+<script src="04-ui.js"></script>
+<script src="05-player.js"></script>
+<script src="06-plan.js"></script>
+<script src="07-calendar.js"></script>
+<script src="08-pdf.js"></script>
+<script src="09-excel.js"></script>
+<script src="10-init.js"></script>
+</body>
+</html>
