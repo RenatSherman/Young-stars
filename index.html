@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>АК БАРС — Система развития</title>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
@@ -50,13 +50,15 @@
   <div class="logo" onclick="goHome()" title="К списку игроков">
     <div>АК БАРС<small>Система развития · 1956</small></div>
   </div>
-  <nav>
+
+  <button class="burger" id="burger-btn" onclick="toggleMobileNav(event)" aria-label="Меню">☰</button>
+
+  <nav id="main-nav">
     <button data-screen="dashboard">Дашборд</button>
     <button data-screen="coach-calendar">Календарь тренера</button>
     <button data-screen="coach-report">Отчёт тренера</button>
     <button data-screen="players" class="active">Игроки</button>
     <button data-screen="report">Отчёт по игрокам</button>
-    <button data-screen="compare">Сравнение</button>
     <button data-screen="exercises">Упражнения</button>
     <button data-screen="data">Данные</button>
     <button class="notif-btn" onclick="toggleNotif(event)">🔔<span id="notif-badge" class="notif-badge" style="display:none">0</span></button>
@@ -78,7 +80,7 @@
 
   <section id="screen-coach-calendar" class="screen">
     <h1>Календарь тренера</h1>
-    <p class="subtitle">Общее расписание всех игроков · Нажмите на ячейку, чтобы назначить тренировку</p>
+    <p class="subtitle">Общее расписание всех игроков · Нажмите на день, чтобы назначить тренировку</p>
     <div id="coach-calendar-content"></div>
   </section>
 
@@ -131,24 +133,6 @@
       </div>
     </div>
     <div id="report-content"></div>
-  </section>
-
-  <section id="screen-compare" class="screen">
-    <h1>Сравнение игроков</h1>
-    <p class="subtitle">Наложение профилей навыков двух игроков</p>
-    <div class="card">
-      <div class="compare-select">
-        <label style="font-weight:900;font-size:12px;text-transform:uppercase;letter-spacing:.5px;color:var(--ak-green);font-family:var(--font-display)">Игрок 1:</label>
-        <select id="cmp-a" onchange="renderCompare()"></select>
-        <label style="font-weight:900;font-size:12px;text-transform:uppercase;letter-spacing:.5px;color:var(--ak-green);font-family:var(--font-display)">Игрок 2:</label>
-        <select id="cmp-b" onchange="renderCompare()"></select>
-      </div>
-      <div class="radar-wrap">
-        <div class="radar-box"><canvas id="cmp-radar"></canvas></div>
-        <div id="cmp-legend" class="scores-legend"></div>
-      </div>
-    </div>
-    <div class="card" id="cmp-table"></div>
   </section>
 
   <section id="screen-exercises" class="screen">

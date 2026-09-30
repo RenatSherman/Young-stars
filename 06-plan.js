@@ -1,120 +1,197 @@
 /* ============================================================
    06-plan.js
-   План / факт, отчёт по итогу месяца.
+   План / факт — формируется АВТОМАТИЧЕСКИ из календаря тренера.
+   Группировка по формам работы, авто-объём из времени с/до.
+   Факт и примечание редактируются вручную.
    Загружается после 05-player.js.
    ============================================================ */
 
-/* ===== Контейнер вкладки «План / факт» ===== */
+/* ===== Контейнер вкладки ===== */
 function renderPlan(p) {
   return `<div class="card">
     <h2>План / факт</h2>
+    <p class="subtitle" style="margin-top:-8px">
+      Формируется автоматически из «Календаря тренера». Здесь можно отметить факт выполнения и добавить примечание.
+    </p>
     <div id="plan-content"></div>
   </div>`;
 }
 
-/* ===== Содержимое вкладки «План / факт» ===== */
+/* ===== Содержимое ===== */
 function renderPlanContent(p) {
   const el = document.getElementById('plan-content');
   if (!el) return;
 
-  const months = Object.keys(p.plans || {});
+  const months = collectPlayerPlanMonths(p);
   if (!months.length) {
-    el.innerHTML = `<p class="subtitle">Нет данных.</p>
-      <button class="btn" onclick="addMonth('${p.id}')">+ Добавить месяц</button>`;
+    el.innerHTML = `<p class="subtitle">В календаре тренера ещё нет тренировок для этого игрока.</p>
+      <button class="btn" onclick="showScreen('coach-calendar')">📅 Перейти в календарь тренера</button>`;
     return;
   }
 
   if (!currentPlanMonth || !months.includes(currentPlanMonth)) {
-    currentPlanMonth = months[0];
+    currentPlanMonth = months[months.length - 1];
   }
+
   const month = currentPlanMonth;
-  const plan = p.plans[month];
-  const week = currentPlanWeek;
-
-  const weekSuffix = 'w' + week;
-  const planKey = weekSuffix + 'p';
-  const volKey  = weekSuffix + 'v';
-  const factKey = weekSuffix + 'f';
-  const noteKey = weekSuffix + 'n';
-  const wtypeKey = weekSuffix + 'wt';
-
-  const allBlocks = Array.from(new Set(DB.exercises.map(g => g.group)));
-
-  let rows = '';
-  (plan.rows || []).forEach((r, i) => {
-    const curPlan = r[planKey] || '';
-    const isCustom = curPlan && !allBlocks.includes(curPlan);
-
-    let selectHtml = `<select class="cell plan-select" onchange="onPlanBlockSelect('${p.id}','${escapeAttr(month)}',${i},'${planKey}', this)">
-      <option value="">— не выбрано —</option>`;
-    allBlocks.forEach(v => {
-      selectHtml += `<option value="${escapeAttr(v)}" ${v === curPlan ? 'selected' : ''}>${escapeHtml(v)}</option>`;
-    });
-    if (isCustom) {
-      selectHtml += `<option value="${escapeAttr(curPlan)}" selected>${escapeHtml(curPlan)}</option>`;
-    }
-    selectHtml += `</select>`;
-
-    const wt = Array.isArray(r[wtypeKey]) ? r[wtypeKey] : [];
-    const wtHtml = WORK_TYPES.map(t => {
-      const checked = wt.includes(t) ? 'checked' : '';
-      return `<label><input type="checkbox" ${checked} onchange="toggleWorkType('${p.id}','${escapeAttr(month)}',${i},'${wtypeKey}', this.value)" value="${escapeAttr(t)}"> ${escapeHtml(t)}</label>`;
-    }).join('');
-
-    const factVal = r[factKey] || '';
-    const factCls = factClass(factVal);
-    const factHtml = `<select class="fact-select ${factCls}" onchange="updatePlanFact('${p.id}','${escapeAttr(month)}',${i},'${factKey}', this.value)">
-      ${FACT_OPTIONS.map(o => `<option value="${o.value}" ${o.value === factVal ? 'selected' : ''}>${escapeHtml(o.label)}</option>`).join('')}
-    </select>`;
-
-    rows += `<tr>
-      <td>${escapeHtml(r.group || '')}</td>
-      <td>${escapeHtml(r.sub || '')}</td>
-      <td><div class="worktype-cell">${wtHtml}</div></td>
-      <td>
-        ${selectHtml}
-        <input class="cell plan-manual" style="margin-top:4px;display:${isCustom ? 'block' : 'none'}"
-               value="${isCustom ? escapeAttr(curPlan) : ''}"
-               placeholder="Своё название"
-               onchange="updatePlan('${p.id}','${escapeAttr(month)}',${i},'${planKey}',this.value)">
-      </td>
-      <td><input class="cell" type="number" min="0" value="${r[volKey] || ''}" onchange="updatePlan('${p.id}','${escapeAttr(month)}',${i},'${volKey}',this.value)"></td>
-      <td>${factHtml}</td>
-      <td><textarea class="cell" rows="1" onchange="updatePlan('${p.id}','${escapeAttr(month)}',${i},'${noteKey}',this.value)">${escapeHtml(r[noteKey] || '')}</textarea></td>
-    </tr>`;
-  });
+  const summary = computePlanSummary(p, month);
 
   el.innerHTML = `
     <div class="plan-controls no-print">
       <label>Месяц:</label>
       <select id="plan-month-select" onchange="onPlanMonthChange('${p.id}', this.value)">
-        ${months.map(m => `<option value="${escapeAttr(m)}" ${m === month ? 'selected' : ''}>${escapeHtml(m)}</option>`).join('')}
+        ${months.map(m => `<option value="${m}" ${m === month ? 'selected' : ''}>${monthLabelFromKey(m)}</option>`).join('')}
       </select>
-      <button class="btn btn-sm btn-ghost" onclick="addMonth('${p.id}')">+ месяц</button>
-      <button class="btn btn-sm btn-red" onclick="deleteMonth('${p.id}','${escapeAttr(month)}')">🗑 удалить месяц</button>
-      <label style="margin-left:auto">Неделя:</label>
-      <div class="week-buttons" id="plan-weeks">
-        ${[1,2,3,4,5].map(w => `<button class="${week === w ? 'active' : ''}" onclick="onPlanWeekChange('${p.id}',${w})">Неделя ${w}</button>`).join('')}
-      </div>
     </div>
-    <div style="overflow-x:auto">
+    ${renderPlanSummaryBlock(summary)}
+    ${renderPlanTable(p, month, summary)}
+  `;
+}
+
+/* ===== Месяцы, где есть тренировки у игрока ===== */
+function collectPlayerPlanMonths(p) {
+  const set = new Set();
+  if (!p.calendar) return [];
+  Object.keys(p.calendar).forEach(date => {
+    const day = p.calendar[date];
+    if (!Array.isArray(day) || !day.length) return;
+    set.add(date.slice(0, 7));
+  });
+  return Array.from(set).sort();
+}
+
+function monthLabelFromKey(ym) {
+  const [y, m] = ym.split('-').map(Number);
+  return `${MONTH_NAMES_RU[m - 1]} ${y}`;
+}
+
+/* ===== Сводка по формам работы ===== */
+function computePlanSummary(p, month) {
+  const summary = {
+    'Самостоятельная':           { count: 0, minutes: 0 },
+    'Индивидуальная с тренером': { count: 0, minutes: 0 },
+    'В группе':                  { count: 0, minutes: 0 },
+    '_total':                    { count: 0, minutes: 0 }
+  };
+  const items = [];
+
+  if (!p.calendar) return { summary, items, month };
+
+  Object.keys(p.calendar).forEach(date => {
+    if (date.slice(0, 7) !== month) return;
+    const day = p.calendar[date];
+    if (!Array.isArray(day)) return;
+
+    day.forEach(sess => {
+      if (!sess) return;
+      const dur = computeSessionDuration(sess);
+      const wt = Array.isArray(sess.workTypes) ? sess.workTypes : [];
+      const factVal = sess.fact || '';
+      const note = sess.note || '';
+
+      items.push({
+        date,
+        timeStart: sess.timeStart || '',
+        timeEnd: sess.timeEnd || '',
+        duration: dur,
+        name: sess.name || sess.block || '',
+        block: sess.block || '',
+        workTypes: wt,
+        fact: factVal,
+        note
+      });
+
+      summary._total.count++;
+      summary._total.minutes += dur;
+
+      if (!wt.length) {
+        // без формы — учтём только в общей сумме
+      } else {
+        wt.forEach(w => {
+          if (summary[w]) {
+            summary[w].count++;
+            summary[w].minutes += dur;
+          }
+        });
+      }
+    });
+  });
+
+  items.sort((a, b) => (a.date + a.timeStart).localeCompare(b.date + b.timeStart));
+  return { summary, items, month };
+}
+
+function computeSessionDuration(sess) {
+  if (!sess) return 0;
+  const t1 = timeToMinutes(sess.timeStart);
+  const t2 = timeToMinutes(sess.timeEnd);
+  return Math.max(0, t2 - t1);
+}
+
+/* ===== Блок сводки ===== */
+function renderPlanSummaryBlock(summary) {
+  const card = (label, obj, red) => `
+    <div class="plan-summary-item ${red ? 'red' : ''}">
+      <div class="lbl">${escapeHtml(label)}</div>
+      <div class="val">${obj.count} <small>трен. · ${obj.minutes} мин</small></div>
+    </div>`;
+
+  return `
+    <div class="plan-summary">
+      ${card('Самостоятельная',           summary['Самостоятельная'])}
+      ${card('Индивидуальная с тренером', summary['Индивидуальная с тренером'], true)}
+      ${card('В группе',                  summary['В группе'])}
+      ${card('Всего',                     summary._total, true)}
+    </div>`;
+}
+
+/* ===== Таблица плана ===== */
+function renderPlanTable(p, month, summary) {
+  if (!summary.items.length) {
+    return `<p class="subtitle">За этот месяц нет тренировок.</p>`;
+  }
+
+  const rows = summary.items.map((it, idx) => {
+    const factVal = it.fact || '';
+    const factCls = factClass(factVal);
+    const wtStr = it.workTypes.length ? it.workTypes.join(', ') : '—';
+
+    return `<tr>
+      <td>${formatDate(it.date)}</td>
+      <td>${escapeHtml(it.timeStart)}–${escapeHtml(it.timeEnd)}</td>
+      <td>${escapeHtml(it.name || it.block || '')}</td>
+      <td>${escapeHtml(wtStr)}</td>
+      <td>${it.duration}</td>
+      <td>
+        <select class="fact-select ${factCls}" onchange="updateSessionFact('${p.id}','${it.date}','${idx}', this.value)">
+          ${FACT_OPTIONS.map(o => `<option value="${o.value}" ${o.value === factVal ? 'selected' : ''}>${escapeHtml(o.label)}</option>`).join('')}
+        </select>
+      </td>
+      <td>
+        <textarea class="cell" rows="1" onchange="updateSessionNote('${p.id}','${it.date}','${idx}', this.value)">${escapeHtml(it.note || '')}</textarea>
+      </td>
+    </tr>`;
+  }).join('');
+
+  return `
+    <div style="overflow-x:auto;margin-top:16px">
       <table class="plan-table">
         <colgroup>
-          <col class="col-section">
-          <col class="col-element">
-          <col class="col-worktype">
-          <col class="col-plan">
-          <col class="col-vol">
-          <col class="col-fact">
-          <col class="col-note">
+          <col style="width:90px">
+          <col style="width:120px">
+          <col>
+          <col style="width:180px">
+          <col style="width:70px">
+          <col style="width:160px">
+          <col>
         </colgroup>
         <thead>
           <tr>
-            <th>Раздел</th>
-            <th>Элемент</th>
+            <th>Дата</th>
+            <th>Время</th>
+            <th>Тренировка</th>
             <th>Форма работы</th>
-            <th>План (блок) · Неделя ${week}</th>
-            <th>Объём, мин</th>
+            <th>Мин</th>
             <th>Факт</th>
             <th>Примечание</th>
           </tr>
@@ -124,33 +201,28 @@ function renderPlanContent(p) {
     </div>`;
 }
 
-/* ===== Обработчики плана ===== */
-function onPlanBlockSelect(pid, month, i, f, selectEl) {
-  const val = selectEl.value;
+/* ===== Редактирование факта и примечания ===== */
+function updateSessionFact(pid, date, idx, value) {
   const p = DB.players.find(x => x.id === pid);
-  if (!p || !p.plans[month]) return;
-  p.plans[month].rows[i][f] = val;
+  if (!p || !p.calendar[date]) return;
+  const day = p.calendar[date];
+  if (!Array.isArray(day)) return;
+
+  // idx — индекс в отфильтрованном списке summary.items, но нам нужен исходный объект
+  // Проще: пересобрать через summary и сопоставить по времени/названию
+  const summary = computePlanSummary(p, currentPlanMonth);
+  const target = summary.items[idx];
+  if (!target) return;
+
+  const src = day.find(s =>
+    (s.timeStart || '') === target.timeStart &&
+    (s.name || s.block || '') === (target.name || target.block || '')
+  );
+  if (!src) return;
+  src.fact = value;
   saveDB();
 
-  const manual = selectEl.parentElement.querySelector('.plan-manual');
-  if (manual) {
-    const exists = [...selectEl.options].some(o => o.value === val && o.textContent === val);
-    if (val && !exists) {
-      manual.style.display = 'block';
-      manual.value = val;
-    } else {
-      manual.style.display = 'none';
-      manual.value = '';
-    }
-  }
-}
-
-function updatePlanFact(pid, month, i, key, value) {
-  const p = DB.players.find(x => x.id === pid);
-  if (!p || !p.plans[month]) return;
-  p.plans[month].rows[i][key] = value;
-  saveDB();
-  const sel = document.querySelector(`select.fact-select[onchange*="updatePlanFact('${pid}','${month}',${i},'${key}'"]`);
+  const sel = document.querySelector(`select.fact-select[onchange*="updateSessionFact('${pid}','${date}',${idx}'"]`);
   if (sel) {
     sel.classList.remove('done', 'partial', 'notdone');
     const cls = factClass(value);
@@ -158,140 +230,67 @@ function updatePlanFact(pid, month, i, key, value) {
   }
 }
 
-function toggleWorkType(pid, month, i, key, value) {
+function updateSessionNote(pid, date, idx, value) {
   const p = DB.players.find(x => x.id === pid);
-  if (!p || !p.plans[month]) return;
-  const row = p.plans[month].rows[i];
-  if (!Array.isArray(row[key])) row[key] = [];
-  const idx = row[key].indexOf(value);
-  if (idx >= 0) row[key].splice(idx, 1);
-  else row[key].push(value);
+  if (!p || !p.calendar[date]) return;
+  const day = p.calendar[date];
+  if (!Array.isArray(day)) return;
+
+  const summary = computePlanSummary(p, currentPlanMonth);
+  const target = summary.items[idx];
+  if (!target) return;
+
+  const src = day.find(s =>
+    (s.timeStart || '') === target.timeStart &&
+    (s.name || s.block || '') === (target.name || target.block || '')
+  );
+  if (!src) return;
+  src.note = value;
   saveDB();
 }
 
 function onPlanMonthChange(pid, month) {
   currentPlanMonth = month;
-  currentPlanWeek = 1;
   const p = DB.players.find(x => x.id === pid);
   if (p) renderPlanContent(p);
-}
-
-function onPlanWeekChange(pid, week) {
-  currentPlanWeek = parseInt(week);
-  const p = DB.players.find(x => x.id === pid);
-  if (p) renderPlanContent(p);
-}
-
-function updatePlan(pid, m, i, f, v) {
-  const p = DB.players.find(x => x.id === pid);
-  if (!p || !p.plans[m]) return;
-  p.plans[m].rows[i][f] = v;
-  saveDB();
-}
-
-function deleteMonth(pid, month) {
-  const p = DB.players.find(x => x.id === pid);
-  if (!p || !p.plans[month]) return;
-  if (!confirm(`Удалить месяц «${month}» со всеми данными?`)) return;
-
-  delete p.plans[month];
-  const months = Object.keys(p.plans);
-  currentPlanMonth = months.length ? months[0] : null;
-  currentPlanWeek = 1;
-  saveDB();
-
-  const savedTab = currentTab;
-  renderPlayerCard(p);
-  currentTab = savedTab;
-  document.querySelectorAll('.tabs button').forEach(b => b.classList.toggle('active', b.dataset.tab === savedTab));
-  document.querySelectorAll('.tab-content').forEach(c => c.classList.toggle('active', c.id === 'tab-' + savedTab));
-}
-
-function addMonth(pid) {
-  const p = DB.players.find(x => x.id === pid);
-  const name = prompt('Название месяца (например, «Октябрь 2026»):');
-  if (!name || !name.trim()) return;
-
-  const rows = p.techDetail.map(t => ({
-    group: t.group, sub: t.sub,
-    w1p: '', w1v: '', w1f: '', w1n: '', w1wt: [],
-    w2p: '', w2v: '', w2f: '', w2n: '', w2wt: [],
-    w3p: '', w3v: '', w3f: '', w3n: '', w3wt: [],
-    w4p: '', w4v: '', w4f: '', w4n: '', w4wt: [],
-    w5p: '', w5v: '', w5f: '', w5n: '', w5wt: []
-  }));
-
-  p.plans[name.trim()] = { weeks: [], rows };
-  currentPlanMonth = name.trim();
-  currentPlanWeek = 1;
-  saveDB();
-
-  const savedTab = currentTab;
-  renderPlayerCard(p);
-  currentTab = savedTab;
-  document.querySelectorAll('.tabs button').forEach(b => b.classList.toggle('active', b.dataset.tab === savedTab));
-  document.querySelectorAll('.tab-content').forEach(c => c.classList.toggle('active', c.id === 'tab-' + savedTab));
 }
 
 /* ============================================================
-   ОТЧЁТ ПО МЕСЯЦУ
+   ОТЧЁТ ПО МЕСЯЦУ (по игрокам)
    ============================================================ */
 
 function collectAllPlanMonths() {
   const set = new Set();
   DB.players.forEach(p => {
-    if (p.plans) Object.keys(p.plans).forEach(m => set.add(m));
+    if (!p.calendar) return;
+    Object.keys(p.calendar).forEach(date => {
+      const day = p.calendar[date];
+      if (Array.isArray(day) && day.length) set.add(date.slice(0, 7));
+    });
   });
-  return Array.from(set).sort((a, b) => a.localeCompare(b, 'ru'));
+  return Array.from(set).sort();
 }
 
 function computePlayerMonthStats(p, month) {
-  const plan = p.plans && p.plans[month];
-  if (!plan) return null;
+  const sum = computePlanSummary(p, month);
+  const items = sum.items;
+  if (!items.length) return null;
 
-  let total = 0, done = 0, partial = 0, notdone = 0, volumePlan = 0;
-  const items = [];
-  const weeks = [1, 2, 3, 4, 5];
-
-  weeks.forEach(w => {
-    const planKey = 'w' + w + 'p';
-    const volKey  = 'w' + w + 'v';
-    const factKey = 'w' + w + 'f';
-    const wtKey   = 'w' + w + 'wt';
-
-    (plan.rows || []).forEach(r => {
-      const planText = (r[planKey] || '').trim();
-      const wt = Array.isArray(r[wtKey]) ? r[wtKey] : [];
-      const factVal = r[factKey] || '';
-      const vol = Number(r[volKey]) || 0;
-
-      if (!planText && !vol && !factVal && !wt.length) return;
-
-      total++;
-      if (factVal === 'done') done++;
-      else if (factVal === 'partial') partial++;
-      else if (factVal === 'notdone') notdone++;
-      volumePlan += vol;
-
-      items.push({
-        week: w,
-        group: r.group || '',
-        sub: r.sub || '',
-        plan: planText,
-        wt,
-        volume: vol,
-        fact: factVal
-      });
-    });
+  let done = 0, partial = 0, notdone = 0, volumePlan = 0;
+  items.forEach(it => {
+    volumePlan += it.duration;
+    if (it.fact === 'done') done++;
+    else if (it.fact === 'partial') partial++;
+    else if (it.fact === 'notdone') notdone++;
   });
 
+  const total = items.length;
   const completion = total ? Math.round((done + partial * 0.5) / total * 100) : 0;
   return { total, done, partial, notdone, volumePlan, items, completion };
 }
 
 function computeAllPlayersMonthStats(month) {
   let total = 0, done = 0, partial = 0, notdone = 0;
-
   DB.players.forEach(p => {
     const st = computePlayerMonthStats(p, month);
     if (!st) return;
@@ -300,7 +299,6 @@ function computeAllPlayersMonthStats(month) {
     partial += st.partial;
     notdone += st.notdone;
   });
-
   const overall = total ? Math.round((done + partial * 0.5) / total * 100) : 0;
   return { total, done, partial, notdone, overall };
 }
@@ -309,14 +307,16 @@ function renderReport() {
   const months = collectAllPlanMonths();
   const monthSel = document.getElementById('report-month');
   const playerSel = document.getElementById('report-player-filter');
+  if (!monthSel || !playerSel) return;
 
   if (!months.length) {
-    document.getElementById('report-content').innerHTML = '<div class="empty-state"><div class="big">📄</div><p>Нет планов для отчёта.</p></div>';
+    document.getElementById('report-content').innerHTML = '<div class="empty-state"><div class="big">📄</div><p>Нет тренировок для отчёта.</p></div>';
     return;
   }
 
-  monthSel.innerHTML = months.map(m => `<option value="${escapeAttr(m)}">${escapeHtml(m)}</option>`).join('');
-  if (!reportMonth || !months.includes(reportMonth)) reportMonth = months[0];
+  const prevMonth = reportMonth;
+  monthSel.innerHTML = months.map(m => `<option value="${m}">${monthLabelFromKey(m)}</option>`).join('');
+  reportMonth = (prevMonth && months.includes(prevMonth)) ? prevMonth : months[months.length - 1];
   monthSel.value = reportMonth;
 
   const prevPlayer = playerSel.value;
@@ -330,9 +330,9 @@ function renderReport() {
 
   let html = `
     <div class="card">
-      <h2>Сводка по месяцу «${escapeHtml(month)}»</h2>
+      <h2>Сводка по месяцу «${escapeHtml(monthLabelFromKey(month))}»</h2>
       <div class="dash-grid">
-        <div class="kpi"><div class="lbl">Всего пунктов</div><div class="val">${allStats.total}</div></div>
+        <div class="kpi"><div class="lbl">Всего тренировок</div><div class="val">${allStats.total}</div></div>
         <div class="kpi"><div class="lbl">Выполнено</div><div class="val" style="color:#1e7a3f">${allStats.done}</div></div>
         <div class="kpi"><div class="lbl">Частично</div><div class="val" style="color:#b8860b">${allStats.partial}</div></div>
         <div class="kpi red"><div class="lbl">Не выполнено</div><div class="val">${allStats.notdone}</div></div>
@@ -341,10 +341,10 @@ function renderReport() {
     </div>`;
 
   const players = filterPid ? DB.players.filter(p => p.id === filterPid) : DB.players;
-  const anyData = players.some(p => p.plans && p.plans[month]);
+  const anyData = players.some(p => p.calendar && Object.keys(p.calendar).some(d => d.slice(0, 7) === month && Array.isArray(p.calendar[d]) && p.calendar[d].length));
 
   if (!anyData) {
-    html += '<div class="empty-state"><div class="big">📄</div><p>У выбранных игроков нет данных за этот месяц.</p></div>';
+    html += '<div class="empty-state"><div class="big">📄</div><p>У выбранных игроков нет тренировок за этот месяц.</p></div>';
   } else {
     players.forEach(p => {
       const st = computePlayerMonthStats(p, month);
@@ -356,12 +356,11 @@ function renderReport() {
                      : it.fact === 'notdone' ? 'fact-notdone'
                      : '';
         return `<tr class="${factCls}">
-          <td>Неделя ${it.week}</td>
-          <td>${escapeHtml(it.group)}</td>
-          <td>${escapeHtml(it.sub)}</td>
-          <td>${escapeHtml(it.plan)}</td>
-          <td>${escapeHtml(it.wt.join(', '))}</td>
-          <td>${it.volume || ''}</td>
+          <td>${formatDate(it.date)}</td>
+          <td>${escapeHtml(it.timeStart)}–${escapeHtml(it.timeEnd)}</td>
+          <td>${escapeHtml(it.name || it.block || '')}</td>
+          <td>${escapeHtml(it.workTypes.join(', '))}</td>
+          <td>${it.duration}</td>
           <td>${factLabel(it.fact)}</td>
         </tr>`;
       }).join('');
@@ -374,15 +373,15 @@ function renderReport() {
             <span class="badge done">Выполнено: ${st.done}</span>
             <span class="badge partial">Частично: ${st.partial}</span>
             <span class="badge notdone">Не выполнено: ${st.notdone}</span>
-            <span class="badge">Всего пунктов: ${st.total}</span>
-            <span class="badge">Объём по плану: ${st.volumePlan} мин</span>
+            <span class="badge">Всего: ${st.total}</span>
+            <span class="badge">Объём: ${st.volumePlan} мин</span>
           </div>
           <div class="report-progress"><span style="width:${st.completion}%"></span></div>
           <div style="font-size:12px;font-weight:700;color:var(--ak-green);margin-bottom:10px">Выполнение: ${st.completion}%</div>
           ${st.items.length ? `<table class="report-table">
-            <thead><tr><th>Неделя</th><th>Раздел</th><th>Элемент</th><th>План</th><th>Форма работы</th><th>Объём, мин</th><th>Факт</th></tr></thead>
+            <thead><tr><th>Дата</th><th>Время</th><th>Тренировка</th><th>Форма работы</th><th>Мин</th><th>Факт</th></tr></thead>
             <tbody>${rows}</tbody>
-          </table>` : '<p class="subtitle">Нет записей.</p>'}
+          </table>` : ''}
         </div>`;
     });
   }

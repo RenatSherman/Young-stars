@@ -1,288 +1,53 @@
 /* ============================================================
    07-calendar.js
-   Календарь тренировок + справочник упражнений.
+   Календарь игрока (список тренировок по дням) + справочник.
    Загружается после 06-plan.js.
    ============================================================ */
 
-/* ============================================================
-   КАЛЕНДАРЬ
-   ============================================================ */
-
+/* ===== Календарь игрока ===== */
 function renderCalendar(p) {
-  return `<div class="card"><h2>Календарь тренировок</h2>
-    <p class="subtitle no-print" style="margin-top:-8px">Выберите месяц и неделю. Клик по ячейке — назначить упражнение.</p>
-    <div class="cal-controls no-print">
-      <label style="font-weight:900;font-size:11px;text-transform:uppercase;letter-spacing:.8px;font-family:var(--font-display);color:var(--ak-green)">Месяц:</label>
-      <input type="month" id="cal-month" value="${currentCalMonth}" onchange="onCalMonthChange('${p.id}')">
-      <div class="week-buttons" id="cal-weeks">
-        ${[1,2,3,4,5].map(w => {
-          const dates = getWeekDates(parseInt(currentCalMonth.slice(0, 4)), parseInt(currentCalMonth.slice(5, 7)) - 1, w);
-          const range = `${dates[0].getDate()}.${String(dates[0].getMonth() + 1).padStart(2, '0')}–${dates[6].getDate()}.${String(dates[6].getMonth() + 1).padStart(2, '0')}`;
-          return `<button class="${currentCalWeek === w ? 'active' : ''}" onclick="onCalWeekChange('${p.id}',${w})">Неделя ${w}<span class="wd">${range}</span></button>`;
-        }).join('')}
-      </div>
-    </div>
-    <div class="acc-outer">
-      <div class="calendar-grid" id="cal-grid"></div>
-    </div>
+  return `<div class="card">
+    <h2>Календарь игрока</h2>
+    <p class="subtitle" style="margin-top:-8px">Тренировки назначаются в «Календаре тренера».</p>
+    <div id="player-calendar-content"></div>
   </div>`;
 }
 
-function onCalMonthChange(pid) {
-  const input = document.getElementById('cal-month');
-  currentCalMonth = input.value;
-  currentCalWeek = 1;
-  const p = DB.players.find(x => x.id === pid);
-  if (p) renderPlayerCard(p);
-}
-
-function onCalWeekChange(pid, w) {
-  currentCalWeek = w;
-  document.querySelectorAll('#cal-weeks button').forEach(b => b.classList.remove('active'));
-  const btns = document.querySelectorAll('#cal-weeks button');
-  if (btns[w - 1]) btns[w - 1].classList.add('active');
-  renderCalendarGrid(DB.players.find(x => x.id === pid));
-}
-
-/* Возвращает 7 дат (Пн..Вс) для указанной недели месяца */
-function getWeekDates(year, month, weekNum) {
-  const first = new Date(year, month, 1);
-  let dow = first.getDay();
-  if (dow === 0) dow = 7;
-  const firstMonday = new Date(year, month, 1 - (dow - 1));
-  const weekStart = new Date(firstMonday);
-  weekStart.setDate(firstMonday.getDate() + (weekNum - 1) * 7);
-  const dates = [];
-  for (let i = 0; i < 7; i++) {
-    const d = new Date(weekStart);
-    d.setDate(weekStart.getDate() + i);
-    dates.push(d);
-  }
-  return dates;
-}
-
 function renderCalendarGrid(p) {
-  const grid = document.getElementById('cal-grid');
-  if (!grid || !p) return;
+  const el = document.getElementById('player-calendar-content');
+  if (!el || !p) return;
 
-  const [year, month] = currentCalMonth.split('-').map(Number);
-  const dates = getWeekDates(year, month - 1, currentCalWeek);
-  const dayNames = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
-  const today = localDateStr(new Date());
-
-  let head = '<div class="cal-head"><div class="dow">Время</div></div>';
-  dates.forEach((d, i) => {
-    const dateStr = localDateStr(d);
-    const isToday = dateStr === today;
-    const isOtherMonth = d.getMonth() !== (month - 1);
-    const isWeekend = i >= 5;
-    head += `<div class="cal-head ${isToday ? 'today' : ''} ${isWeekend ? 'weekend' : ''}" style="${isOtherMonth ? 'opacity:.55' : ''}">
-      <div class="dow">${dayNames[i]}</div>
-      <div class="dnum">${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}</div>
-    </div>`;
-  });
-
-  const hours = [];
-  for (let h = 6; h <= 21; h++) {
-    ['00', '15', '30', '45'].forEach(m => hours.push(`${String(h).padStart(2, '0')}:${m}`));
-  }
-
-  let body = '';
-  hours.forEach(h => {
-    body += `<div class="cal-time">${h}</div>`;
-    dates.forEach(d => {
-      const dateStr = localDateStr(d);
-      const cell = (p.calendar && p.calendar[dateStr] && p.calendar[dateStr][h]) || null;
-      const hasNote = cell && cell.note && cell.note.trim();
-      const cls = cell ? ((cell.groupId ? 'group ' : 'filled ') + (hasNote ? 'has-note' : '')) : '';
-      const txt = cell ? escapeHtml(cell.ex || '') : '';
-      const fullTitle = cell ? `${cell.ex || ''}${cell.wt && cell.wt.length ? ' [' + cell.wt.join(', ') + ']' : ''}${hasNote ? ' • ' + cell.note : ''}` : '';
-      const cellDow = d.getDay();
-      const isWeekendCell = (cellDow === 0 || cellDow === 6);
-      body += `<div class="cal-cell ${cls} ${isWeekendCell ? 'weekend' : ''}" onclick="editCalendar('${p.id}','${dateStr}','${h}')" title="${escapeAttr(fullTitle)}"><span class="note-dot"></span>${txt}</div>`;
-    });
-  });
-
-  grid.innerHTML = head + body;
-}
-
-function editCalendar(pid, date, time) {
-  const p = DB.players.find(x => x.id === pid);
-  if (!p) return;
-  if (!p.calendar) p.calendar = {};
-  if (!p.calendar[date]) p.calendar[date] = {};
-  const cur = p.calendar[date][time] || { ex: '', note: '', wt: [] };
-
-  const allBlocks = Array.from(new Set(DB.exercises.map(g => g.group)));
-
-  let options = '<option value="">— не выбрано —</option>';
-  allBlocks.forEach(v => {
-    options += `<option value="${escapeAttr(v)}" ${cur.ex === v ? 'selected' : ''}>${escapeHtml(v)}</option>`;
-  });
-
-  const isCustomEx = cur.ex && !allBlocks.includes(cur.ex);
-
-  const wtArr = Array.isArray(cur.wt) ? cur.wt : [];
-  const wtHtml = WORK_TYPES.map(t => {
-    const checked = wtArr.includes(t);
-    return `<label class="wt-chip ${checked ? 'checked' : ''}" onclick="this.classList.toggle('checked')">
-      <input type="checkbox" class="cal-wt" value="${escapeAttr(t)}" ${checked ? 'checked' : ''}>
-      <span class="dot"></span>
-      <span>${escapeHtml(t)}</span>
-    </label>`;
-  }).join('');
-
-  const otherPlayers = DB.players.filter(x => x.id !== pid);
-  const groupHtml = otherPlayers.length
-    ? `<div class="field">
-        <label>Применить также к другим игрокам (групповая тренировка)</label>
-        <div class="group-tools">
-          <input type="text" id="grp-search" placeholder="Поиск по ФИО или команде…" oninput="filterGroupPlayers()">
-          <button type="button" onclick="expandAllTeams(true)">Развернуть все</button>
-          <button type="button" onclick="expandAllTeams(false)">Свернуть все</button>
-          <button type="button" onclick="clearGroupSelection()">Снять все</button>
-        </div>
-        <div class="group-list" id="grp-list">
-          ${renderGroupedPlayers(otherPlayers)}
-        </div>
-      </div>`
-    : '';
-
-  openModal(`<h3>${formatDateFull(date)} · ${time}</h3>
-    <div class="field"><label>Блок (из справочника)</label><select id="cal-ex">${options}</select></div>
-    <div class="field"><label>Своё название блока (если нужно)</label>
-      <input id="cal-ex-manual" value="${isCustomEx ? escapeAttr(cur.ex) : ''}" placeholder="оставьте пустым, если выбрали из списка"></div>
-    <div class="field"><label>Форма работы</label>
-      <div class="wt-chips">${wtHtml}</div>
-    </div>
-    <div class="field"><label>Примечание (заполняется вручную)</label>
-      <input id="cal-note" value="${escapeAttr(cur.note || '')}" placeholder="например: акцент на ногах"></div>
-    ${groupHtml}
-    <div class="btn-row" style="margin-top:16px">
-      <button class="btn" onclick="saveCalendar('${pid}','${date}','${time}')">Сохранить</button>
-      <button class="btn btn-red" onclick="clearCalendar('${pid}','${date}','${time}')">Очистить</button>
-      <button class="btn-ghost btn" onclick="closeModal()">Отмена</button>
-    </div>`);
-}
-
-function saveCalendar(pid, date, time) {
-  const p = DB.players.find(x => x.id === pid);
-  const sel = document.getElementById('cal-ex').value;
-  const man = document.getElementById('cal-ex-manual').value.trim();
-  const ex = man || sel;
-  const note = (document.getElementById('cal-note').value || '').trim();
-  const wt = [];
-  document.querySelectorAll('.cal-wt:checked').forEach(cb => wt.push(cb.value));
-
-  const targets = [pid];
-  document.querySelectorAll('.grp-player:checked').forEach(cb => targets.push(cb.value));
-
-  if (!ex && !note && !wt.length) {
-    targets.forEach(tid => {
-      const tp = DB.players.find(x => x.id === tid);
-      if (tp.calendar && tp.calendar[date]) delete tp.calendar[date][time];
-    });
-    saveDB(); closeModal(); renderCalendarGrid(p); updateNotifBadge();
+  if (!p.calendar || !Object.keys(p.calendar).length) {
+    el.innerHTML = '<p class="subtitle">Пока нет тренировок.</p>';
     return;
   }
 
-  const groupId = targets.length > 1 ? 'g_' + Date.now() : undefined;
-  targets.forEach(tid => {
-    const tp = DB.players.find(x => x.id === tid);
-    if (!tp.calendar) tp.calendar = {};
-    if (!tp.calendar[date]) tp.calendar[date] = {};
-    tp.calendar[date][time] = { ex: ex || '', note: note || '', wt, groupId };
-  });
+  const dates = Object.keys(p.calendar).sort();
+  let html = '<div class="player-cal-list">';
 
-  saveDB();
-  closeModal();
-  renderCalendarGrid(p);
-  updateNotifBadge();
-  if (targets.length > 1) toast(`Назначено ${targets.length} игрокам`);
-}
+  dates.forEach(date => {
+    const day = p.calendar[date];
+    if (!Array.isArray(day) || !day.length) return;
 
-function clearCalendar(pid, date, time) {
-  const p = DB.players.find(x => x.id === pid);
-  if (p.calendar && p.calendar[date]) delete p.calendar[date][time];
-  saveDB(); closeModal(); renderCalendarGrid(p); updateNotifBadge();
-}
+    html += `<div class="player-cal-day">
+      <div class="player-cal-date">${formatDateFull(date)}</div>
+      <div class="player-cal-sessions">`;
 
-/* ============================================================
-   ГРУППОВОЙ ВЫБОР ИГРОКОВ В МОДАЛКЕ
-   ============================================================ */
-
-function renderGroupedPlayers(players) {
-  const groups = {};
-  players.forEach(p => {
-    const key = (p.team || '').trim() || '— Без команды —';
-    if (!groups[key]) groups[key] = [];
-    groups[key].push(p);
-  });
-
-  const teamNames = Object.keys(groups).sort((a, b) => a.localeCompare(b, 'ru'));
-  return teamNames.map(team => {
-    const list = groups[team].slice().sort((a, b) => (a.fio || '').localeCompare(b.fio || '', 'ru'));
-    const safeId = 'team-' + team.replace(/[^a-zA-Zа-яА-Я0-9]/g, '_') + '-' + Math.random().toString(36).slice(2, 6);
-    return `<div class="group-team" data-team="${escapeAttr(team)}" id="${safeId}">
-      <div class="group-team-head" onclick="toggleTeam('${safeId}', event)">
-        <span class="arrow">▶</span>
-        <span>${escapeHtml(team)}</span>
-        <span class="count">${list.length}</span>
-        <span class="team-actions" onclick="event.stopPropagation()">
-          <button type="button" onclick="selectTeam('${safeId}', true)">Все</button>
-          <button type="button" onclick="selectTeam('${safeId}', false)">Никто</button>
-        </span>
-      </div>
-      <div class="group-team-body">
-        ${list.map(o => `<label>
-          <input type="checkbox" class="grp-player" value="${o.id}">
-          <span>${escapeHtml(o.fio)}${o.position ? ' <span style="color:var(--ak-gray-dark);font-size:11px">· ' + escapeHtml(o.position) + '</span>' : ''}</span>
-        </label>`).join('')}
-      </div>
-    </div>`;
-  }).join('');
-}
-
-function toggleTeam(teamId, event) {
-  if (event) event.stopPropagation();
-  const el = document.getElementById(teamId);
-  if (!el) return;
-  el.classList.toggle('open');
-}
-
-function expandAllTeams(open) {
-  document.querySelectorAll('#grp-list .group-team').forEach(el => {
-    el.classList.toggle('open', open);
-  });
-}
-
-function selectTeam(teamId, checked) {
-  const el = document.getElementById(teamId);
-  if (!el) return;
-  el.querySelectorAll('.grp-player').forEach(cb => { cb.checked = checked; });
-}
-
-function clearGroupSelection() {
-  document.querySelectorAll('#grp-list .grp-player').forEach(cb => { cb.checked = false; });
-}
-
-function filterGroupPlayers() {
-  const q = (document.getElementById('grp-search')?.value || '').trim().toLowerCase();
-  const list = document.getElementById('grp-list');
-  if (!list) return;
-
-  list.querySelectorAll('.group-team').forEach(teamEl => {
-    const teamName = (teamEl.dataset.team || '').toLowerCase();
-    let visibleInTeam = 0;
-    teamEl.querySelectorAll('.group-team-body label').forEach(lbl => {
-      const text = lbl.innerText.toLowerCase();
-      const match = !q || teamName.includes(q) || text.includes(q);
-      lbl.style.display = match ? 'flex' : 'none';
-      if (match) visibleInTeam++;
+    day.forEach((sess, idx) => {
+      const wt = (sess.workTypes || []).join(', ');
+      html += `<div class="player-cal-session">
+        <div class="pcs-time">${escapeHtml(sess.timeStart || '')}–${escapeHtml(sess.timeEnd || '')}</div>
+        <div class="pcs-name">${escapeHtml(sess.name || sess.block || '')}</div>
+        <div class="pcs-wt">${escapeHtml(wt)}</div>
+        ${sess.note ? `<div class="pcs-note">${escapeHtml(sess.note)}</div>` : ''}
+      </div>`;
     });
-    teamEl.style.display = visibleInTeam ? 'block' : 'none';
-    if (q && visibleInTeam) teamEl.classList.add('open');
+
+    html += `</div></div>`;
   });
+
+  html += '</div>';
+  el.innerHTML = html;
 }
 
 /* ============================================================
@@ -291,6 +56,7 @@ function filterGroupPlayers() {
 
 function renderExercises() {
   const el = document.getElementById('exercises-list');
+  if (!el) return;
   if (!DB.exercises.length) {
     el.innerHTML = '<div class="empty-state"><div class="big">📋</div><p>Справочник пуст.</p></div>';
     updateToggleAllBtn();

@@ -1,7 +1,7 @@
 /* ============================================================
    05-player.js
-   БД (saveDB/loadDB/seedDemoData), оценки, карточка игрока,
-   техника, физ/такт/псих, статистика, тесты, графики.
+   БД, оценки, карточка игрока, техника, физ/такт/псих,
+   статистика, тесты, графики, календарь игрока (список).
    Загружается после 04-ui.js.
    ============================================================ */
 
@@ -19,6 +19,8 @@ function loadDB() {
   if (!DB.players)   DB.players = [];
   if (!DB.exercises) DB.exercises = [];
   if (!DB.meta)      DB.meta = {};
+
+  // Миграция старого формата календаря у всех игроков до первого рендера
   DB.players.forEach(p => migrateCalendar(p));
 }
 
@@ -116,7 +118,11 @@ function confirmDeletePlayer(pid) {
 
   const scoresCount = (p.techDetail || []).filter(r => r.start != null || r.end != null).length
                     + (p.otherDetail || []).filter(r => r.start != null || r.fact != null).length;
-  const calCount = p.calendar ? Object.keys(p.calendar).reduce((acc, d) => acc + Object.keys(p.calendar[d]).length, 0) : 0;
+
+  const calCount = p.calendar
+    ? Object.values(p.calendar).reduce((acc, day) => acc + (Array.isArray(day) ? day.length : 0), 0)
+    : 0;
+
   const statsCount = (p.stats || []).filter(s => s.club || s.season).length;
   const testsCount = (p.tests || []).filter(t => t.date).length;
   const hasData = scoresCount + calCount + statsCount + testsCount > 0;
@@ -133,7 +139,7 @@ function confirmDeletePlayer(pid) {
         <p>Вместе с ним будут удалены:</p>
         <ul>
           ${scoresCount ? `<li>${scoresCount} ${plural(scoresCount, 'оценка', 'оценки', 'оценок')} навыков</li>` : ''}
-          ${calCount ? `<li>${calCount} ${plural(calCount, 'запись', 'записи', 'записей')} в календаре</li>` : ''}
+          ${calCount ? `<li>${calCount} ${plural(calCount, 'тренировка', 'тренировки', 'тренировок')} в календаре</li>` : ''}
           ${statsCount ? `<li>${statsCount} ${plural(statsCount, 'строка', 'строки', 'строк')} статистики</li>` : ''}
           ${testsCount ? `<li>${testsCount} ${plural(testsCount, 'тест', 'теста', 'тестов')}</li>` : ''}
         </ul>
@@ -193,7 +199,6 @@ function openPlayer(id) {
   const p = DB.players.find(x => x.id === id);
   if (!p) return;
   currentPlanMonth = null;
-  currentPlanWeek = 1;
   showScreen('player');
   renderPlayerCard(p);
 }
@@ -201,13 +206,11 @@ function openPlayer(id) {
 /* ===== Карточка игрока ===== */
 function renderPlayerCard(p) {
   const el = document.getElementById('player-card');
+  if (!el) return;
+
   const s = getCurrentScores(p);
   const sEnd = getEndScores(p);
   const age = computeAge(p);
-
-  if (p.calendar && Object.keys(p.calendar).length && !currentCalMonth) {
-    currentCalMonth = Object.keys(p.calendar)[0].slice(0, 7);
-  }
 
   el.innerHTML = `
     <div class="card"><div class="passport">
@@ -283,7 +286,7 @@ function renderPlayerCard(p) {
     <div id="tab-tech" class="tab-content ${currentTab === 'tech' ? 'active' : ''}">${renderTechTable(p)}</div>
     <div id="tab-other" class="tab-content ${currentTab === 'other' ? 'active' : ''}">${renderOtherTable(p)}</div>
     <div id="tab-plan" class="tab-content ${currentTab === 'plan' ? 'active' : ''}">${renderPlan(p)}</div>
-    <div id="tab-calendar" class="tab-content ${currentTab === 'calendar' ? 'active' : ''}">${renderCalendar(p)}</div>
+    <div id="tab-calendar" class="tab-content ${currentTab === 'calendar' ? 'active' : ''}">${renderPlayerCalendarTab(p)}</div>
     <div id="tab-stats" class="tab-content ${currentTab === 'stats' ? 'active' : ''}">${renderStats(p)}</div>
     <div id="tab-tests" class="tab-content ${currentTab === 'tests' ? 'active' : ''}">${renderTests(p)}</div>
     <div id="tab-charts" class="tab-content ${currentTab === 'charts' ? 'active' : ''}">${renderTestCharts(p)}</div>
@@ -297,7 +300,7 @@ function renderPlayerCard(p) {
       btn.classList.add('active');
       document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
       if (btn.dataset.tab === 'charts')   drawTestCharts(p);
-      if (btn.dataset.tab === 'calendar') renderCalendarGrid(p);
+      if (btn.dataset.tab === 'calendar') renderPlayerCalendarTabContent(p);
       if (btn.dataset.tab === 'plan')     renderPlanContent(p);
     });
   });
@@ -305,7 +308,7 @@ function renderPlayerCard(p) {
   drawRadar(p);
   drawRadarCompare(p);
   if (currentTab === 'charts')   drawTestCharts(p);
-  if (currentTab === 'calendar') renderCalendarGrid(p);
+  if (currentTab === 'calendar') renderPlayerCalendarTabContent(p);
   if (currentTab === 'plan')     renderPlanContent(p);
 }
 
@@ -328,7 +331,7 @@ function scoreDisplay(label, val, hint) {
   </div>`;
 }
 
-/* ===== Радар в карточке ===== */
+/* ===== Радар ===== */
 function drawRadar(p) {
   const ctx = document.getElementById('radar-' + p.id);
   if (!ctx) return;
@@ -383,7 +386,108 @@ function drawRadarCompare(p) {
   });
 }
 
-/* ===== Таблица техники ===== */
+/* ============================================================
+   ВКЛАДКА «КАЛЕНДАРЬ» В КАРТОЧКЕ ИГРОКА
+   ============================================================ */
+
+let playerCalMonth = null; // 'YYYY-MM'
+
+function renderPlayerCalendarTab(p) {
+  return `<div class="card">
+    <h2>Календарь тренировок игрока</h2>
+    <p class="subtitle" style="margin-top:-8px">
+      Тренировки назначаются в «Календаре тренера». Здесь они отображаются автоматически.
+    </p>
+    <div id="player-calendar-content"></div>
+  </div>`;
+}
+
+function renderPlayerCalendarTabContent(p) {
+  const el = document.getElementById('player-calendar-content');
+  if (!el) return;
+
+  const months = collectPlayerPlanMonths(p);
+  if (!months.length) {
+    el.innerHTML = `<p class="subtitle">Тренировок пока нет.</p>
+      <button class="btn" onclick="showScreen('coach-calendar')">📅 Перейти в календарь тренера</button>`;
+    return;
+  }
+
+  if (!playerCalMonth || !months.includes(playerCalMonth)) {
+    playerCalMonth = months[months.length - 1];
+  }
+
+  const month = playerCalMonth;
+  const summary = computePlanSummary(p, month);
+
+  let html = `
+    <div class="plan-controls no-print">
+      <label>Месяц:</label>
+      <select onchange="onPlayerCalMonthChange('${p.id}', this.value)">
+        ${months.map(m => `<option value="${m}" ${m === month ? 'selected' : ''}>${monthLabelFromKey(m)}</option>`).join('')}
+      </select>
+    </div>
+  `;
+
+  if (!summary.items.length) {
+    html += '<p class="subtitle">В этом месяце тренировок нет.</p>';
+    el.innerHTML = html;
+    return;
+  }
+
+  // Группировка по дням
+  const byDay = {};
+  summary.items.forEach(it => {
+    if (!byDay[it.date]) byDay[it.date] = [];
+    byDay[it.date].push(it);
+  });
+
+  const days = Object.keys(byDay).sort();
+  html += '<div class="player-cal-list">';
+  days.forEach(date => {
+    const items = byDay[date];
+    html += `<div class="player-cal-day">
+      <div class="player-cal-date">${formatDateFull(date)}</div>
+      <div class="player-cal-sessions">`;
+
+    items.forEach(it => {
+      const color = sessionColorFromTypes(it.workTypes);
+      const wt = it.workTypes.join(', ') || '—';
+      const factCls = factClass(it.fact);
+      const factText = it.fact ? factLabel(it.fact) : '—';
+      html += `<div class="player-cal-session" style="border-left:4px solid ${color};padding-left:10px">
+        <div class="pcs-time">${escapeHtml(it.timeStart)}–${escapeHtml(it.timeEnd)} · ${it.duration} мин</div>
+        <div class="pcs-name">${escapeHtml(it.name || it.block || '')}</div>
+        <div class="pcs-wt">${escapeHtml(wt)}</div>
+        <div class="pcs-fact ${factCls}">${factText}</div>
+        ${it.note ? `<div class="pcs-note">${escapeHtml(it.note)}</div>` : ''}
+      </div>`;
+    });
+
+    html += `</div></div>`;
+  });
+  html += '</div>';
+
+  el.innerHTML = html;
+}
+
+function onPlayerCalMonthChange(pid, month) {
+  playerCalMonth = month;
+  const p = DB.players.find(x => x.id === pid);
+  if (p) renderPlayerCalendarTabContent(p);
+}
+
+function sessionColorFromTypes(types) {
+  const wt = types || [];
+  if (wt.includes('В группе')) return WORK_TYPE_COLORS['В группе'];
+  if (wt.includes('Индивидуальная с тренером')) return WORK_TYPE_COLORS['Индивидуальная с тренером'];
+  if (wt.includes('Самостоятельная')) return WORK_TYPE_COLORS['Самостоятельная'];
+  return '#5a6169';
+}
+
+/* ============================================================
+   ТАБЛИЦА ТЕХНИКИ
+   ============================================================ */
 function renderTechTable(p) {
   let rows = '', lastGroup = '', lastSub = '';
   p.techDetail.forEach((r, i) => {
@@ -417,7 +521,9 @@ function updateTechName(pid, i, f, v) {
   saveDB();
 }
 
-/* ===== Таблица физ/такт/псих ===== */
+/* ============================================================
+   ТАБЛИЦА ФИЗ/ТАКТ/ПСИХ
+   ============================================================ */
 function renderOtherTable(p) {
   let rows = '', lastGroup = '', lastSub = '';
   p.otherDetail.forEach((r, i) => {
@@ -462,7 +568,9 @@ function refreshProfile(pid) {
   window.scrollTo(0, scrollY);
 }
 
-/* ===== Статистика ===== */
+/* ============================================================
+   СТАТИСТИКА
+   ============================================================ */
 function renderStats(p) {
   let rows = p.stats.map((s, i) => {
     if (s.season && !s.club) return `<tr class="section-row"><td colspan="7">${escapeHtml(s.season)}</td></tr>`;
@@ -506,7 +614,9 @@ function removeStat(pid, i) {
   p.stats.splice(i, 1); saveDB(); refreshProfile(pid);
 }
 
-/* ===== Тесты ===== */
+/* ============================================================
+   ТЕСТЫ
+   ============================================================ */
 function renderTests(p) {
   const cols = getTestColumns();
   const headHtml = `<th>Дата</th>` + cols.map(c =>
@@ -573,7 +683,9 @@ function removeTest(pid, i) {
   p.tests.splice(i, 1); saveDB(); refreshProfile(pid);
 }
 
-/* ===== Графики тестов ===== */
+/* ============================================================
+   ГРАФИКИ ТЕСТОВ
+   ============================================================ */
 function renderTestCharts(p) {
   return `<div class="card"><h2>Динамика тестов</h2>
     <p class="subtitle" style="margin-top:-8px">Линейные графики по датам замеров</p>
@@ -630,7 +742,9 @@ function drawTestCharts(p) {
   makeChart('ch-overall-' + p.id, overall, 'Общий прогресс, %', '#C8102E');
 }
 
-/* ===== Загрузка фото ===== */
+/* ============================================================
+   ФОТО
+   ============================================================ */
 function uploadPhoto(pid) {
   const input = document.createElement('input');
   input.type = 'file'; input.accept = 'image/*';
@@ -660,7 +774,9 @@ function uploadPhoto(pid) {
   input.click();
 }
 
-/* ===== Заготовки техники и физ/такт/псих для нового игрока ===== */
+/* ============================================================
+   ЗАГОТОВКИ
+   ============================================================ */
 function defaultTechDetail() {
   return [
     ['Катание','Посадка','Ноги'],['Катание','Посадка','Спина'],['Катание','Посадка','Руки'],['Катание','Посадка','Голова'],

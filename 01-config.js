@@ -33,14 +33,20 @@ let DB = {
 let openAccordions = new Set();
 let currentPlayerId = null;
 let currentTab = 'tech';
-let currentCalMonth = '2026-09';
-let currentCalWeek = 1;
-let currentPlanWeek = 1;
 let currentPlanMonth = null;
 let reportMonth = null;
 
+/* Календарь тренера */
+let coachCalMonth = null;
+
 /* ===== Константы ===== */
 const WORK_TYPES = ['Самостоятельная', 'Индивидуальная с тренером', 'В группе'];
+
+const WORK_TYPE_COLORS = {
+  'Самостоятельная':           '#f59e0b',
+  'Индивидуальная с тренером': '#C8102E',
+  'В группе':                  '#4f46e5'
+};
 
 const FACT_OPTIONS = [
   { value: 'done',    label: 'Выполнено' },
@@ -57,6 +63,10 @@ const DEFAULT_TEST_COLUMNS = [
   { key: 'squat',    label: 'Присед 5ПМ',    unit: 'кг' },
   { key: 'pullups',  label: 'Подтягивания',  unit: 'раз' }
 ];
+
+const MONTH_NAMES_RU = ['Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
+const MONTH_NAMES_RU_GEN = ['января','февраля','марта','апреля','мая','июня','июля','августа','сентября','октября','ноября','декабря'];
+const DOW_SHORT_RU = ['Пн','Вт','Ср','Чт','Пт','Сб','Вс'];
 
 /* ===== Хелперы для работы с тестовыми столбцами ===== */
 function getTestColumns() {

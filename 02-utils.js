@@ -1,6 +1,6 @@
 /* ============================================================
    02-utils.js
-   Утилиты: экранирование, toast, модалки, даты, возраст.
+   Утилиты: экранирование, toast, модалки, даты, возраст, время.
    Загружается после 01-config.js.
    ============================================================ */
 
@@ -21,6 +21,11 @@ function escapeAttr(s) {
   return String(s).replace(/"/g, '&quot;');
 }
 
+/* ===== Уникальный id ===== */
+function uid(prefix = 'id') {
+  return prefix + '_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 8);
+}
+
 /* ===== Склонение существительных ===== */
 function plural(n, one, few, many) {
   const mod10 = n % 10, mod100 = n % 100;
@@ -29,7 +34,7 @@ function plural(n, one, few, many) {
   return many;
 }
 
-/* ===== Уведомление-«тост» внизу экрана ===== */
+/* ===== Уведомление-«тост» ===== */
 function toast(msg) {
   const el = document.createElement('div');
   el.textContent = msg;
@@ -38,7 +43,7 @@ function toast(msg) {
     background:var(--ak-green);color:#fff;padding:14px 28px;border-radius:4px;
     font-size:13px;font-weight:900;box-shadow:var(--shadow-lg);z-index:2000;
     font-family:var(--font-display);letter-spacing:.5px;text-transform:uppercase;
-    border-left:5px solid var(--ak-red);`;
+    border-left:5px solid var(--ak-red);max-width:90vw;text-align:center;`;
   document.body.appendChild(el);
   setTimeout(() => {
     el.style.opacity = '0';
@@ -51,10 +56,12 @@ function toast(msg) {
 function openModal(html) {
   document.getElementById('modal-content').innerHTML = html;
   document.getElementById('modal-bg').classList.add('active');
+  document.body.classList.add('modal-open');
 }
 
 function closeModal() {
   document.getElementById('modal-bg').classList.remove('active');
+  document.body.classList.remove('modal-open');
 }
 
 /* Закрытие кликом по затемнённому фону */
@@ -83,10 +90,9 @@ function formatDate(d) {
 
 function formatDateFull(dateStr) {
   const [y, m, d] = dateStr.split('-');
-  const months = ['января','февраля','марта','апреля','мая','июня','июля','августа','сентября','октября','ноября','декабря'];
   const dow = ['вс','пн','вт','ср','чт','пт','сб'];
   const dt = new Date(dateStr + 'T00:00:00');
-  return `${d} ${months[parseInt(m) - 1]} ${y} (${dow[dt.getDay()]})`;
+  return `${d} ${MONTH_NAMES_RU_GEN[parseInt(m) - 1]} ${y} (${dow[dt.getDay()]})`;
 }
 
 function normalizeDate(v) {
@@ -100,6 +106,23 @@ function normalizeDate(v) {
   const m = s.match(/^(\d{1,2})[.\/](\d{1,2})[.\/](\d{4})/);
   if (m) return `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`;
   return s;
+}
+
+/* ===== Время ===== */
+function timeToMinutes(t) {
+  if (!t) return 0;
+  const [h, m] = String(t).split(':').map(Number);
+  return (h || 0) * 60 + (m || 0);
+}
+
+function minutesToTime(mins) {
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  return String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0');
+}
+
+function formatTimeRange(t1, t2) {
+  return `${t1}–${t2}`;
 }
 
 /* ===== Возраст из даты рождения ===== */
@@ -182,4 +205,12 @@ function updateAgeDisplay(pid) {
   if (!p) return;
   const el = document.getElementById('age-field-' + pid);
   if (el) el.textContent = computeAge(p) || '—';
+}
+
+/* ===== Форматирование «Пн 29.09» ===== */
+function formatDowDate(d) {
+  const dow = (d.getDay() + 6) % 7; // Пн=0
+  const day = String(d.getDate()).padStart(2, '0');
+  const mon = String(d.getMonth() + 1).padStart(2, '0');
+  return `${DOW_SHORT_RU[dow]} ${day}.${mon}`;
 }
