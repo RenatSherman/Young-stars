@@ -1,11 +1,9 @@
 /* ============================================================
    05-player.js
    БД, оценки, карточка игрока, техника, физ/такт/псих,
-   статистика, тесты, графики, календарь игрока (список).
-   Загружается после 04-ui.js.
+   статистика, тесты, графики, календарь игрока (месячная сетка).
    ============================================================ */
 
-/* ===== Работа с локальной БД ===== */
 function saveDB() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(DB));
   scheduleSync();
@@ -13,14 +11,10 @@ function saveDB() {
 
 function loadDB() {
   const raw = localStorage.getItem(STORAGE_KEY) || localStorage.getItem('akbars_hockey_v1');
-  if (raw) {
-    try { DB = JSON.parse(raw); } catch (e) { console.error(e); }
-  }
+  if (raw) { try { DB = JSON.parse(raw); } catch (e) { console.error(e); } }
   if (!DB.players)   DB.players = [];
   if (!DB.exercises) DB.exercises = [];
   if (!DB.meta)      DB.meta = {};
-
-  // Миграция старого формата календаря у всех игроков до первого рендера
   DB.players.forEach(p => migrateCalendar(p));
 }
 
@@ -34,39 +28,27 @@ function seedDemoData() {
   saveDB();
 }
 
-/* ===== Расчёт оценок ===== */
 function computeScores(p, mode) {
   if (!p || !p.techDetail || !p.otherDetail) return { tehn: null, fiz: null, takt: null, psih: null };
   const isEnd = mode === 'end';
   const techCol = isEnd ? 'end' : 'start';
   const otherCol = isEnd ? 'fact' : 'start';
-
   const avgOf = arr => {
     const vals = arr.filter(v => v != null && v !== '' && !isNaN(Number(v)));
     return vals.length ? vals.reduce((a, b) => a + Number(b), 0) / vals.length : null;
   };
-
   const tehn = avgOf(p.techDetail.map(r => r[techCol]));
   const groupAvg = g => avgOf(p.otherDetail.filter(r => r.group === g).map(r => r[otherCol]));
-
-  return {
-    tehn,
-    fiz:  groupAvg('Физические качества'),
-    takt: groupAvg('Тактические навыки'),
-    psih: groupAvg('Психологические характеристики')
-  };
+  return { tehn, fiz: groupAvg('Физические качества'), takt: groupAvg('Тактические навыки'), psih: groupAvg('Психологические характеристики') };
 }
-
 function getCurrentScores(p) { return computeScores(p, 'start'); }
 function getEndScores(p)     { return computeScores(p, 'end'); }
-
 function overallScore(p) {
   const s = getCurrentScores(p);
   const vals = [s.tehn, s.fiz, s.takt, s.psih].filter(v => v != null);
   if (!vals.length) return '—';
   return (vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(1);
 }
-
 function overallScoreEnd(p) {
   const s = getEndScores(p);
   const vals = [s.tehn, s.fiz, s.takt, s.psih].filter(v => v != null);
@@ -74,7 +56,6 @@ function overallScoreEnd(p) {
   return (vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(1);
 }
 
-/* ===== Добавление игрока ===== */
 function addPlayer() {
   openModal(`<h3>Новый игрок</h3>
     <div class="field"><label>ФИО</label><input id="np-fio" autofocus></div>
@@ -91,7 +72,6 @@ function addPlayer() {
 function saveNewPlayer() {
   const fio = document.getElementById('np-fio').value.trim();
   if (!fio) { alert('Введите ФИО'); return; }
-
   DB.players.push({
     id: 'p_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
     fio,
@@ -106,23 +86,18 @@ function saveNewPlayer() {
     otherDetail: defaultOtherDetail(),
     plans: {}, calendar: {}, stats: [], tests: []
   });
-
   saveDB(); closeModal(); renderPlayers();
   toast(`Игрок «${fio}» добавлен`);
 }
 
-/* ===== Удаление игрока ===== */
 function confirmDeletePlayer(pid) {
   const p = DB.players.find(x => x.id === pid);
   if (!p) return;
-
   const scoresCount = (p.techDetail || []).filter(r => r.start != null || r.end != null).length
                     + (p.otherDetail || []).filter(r => r.start != null || r.fact != null).length;
-
   const calCount = p.calendar
-    ? Object.values(p.calendar).reduce((acc, day) => acc + (Array.isArray(day) ? day.length : 0), 0)
+    ? Object.values(p.calendar).reduce((acc, day) => acc + (Array.isArray(day) ? day.reduce((s, sess) => s + (Array.isArray(sess.blocks) ? sess.blocks.length : 0), 0) : 0), 0)
     : 0;
-
   const statsCount = (p.stats || []).filter(s => s.club || s.season).length;
   const testsCount = (p.tests || []).filter(t => t.date).length;
   const hasData = scoresCount + calCount + statsCount + testsCount > 0;
@@ -139,7 +114,7 @@ function confirmDeletePlayer(pid) {
         <p>Вместе с ним будут удалены:</p>
         <ul>
           ${scoresCount ? `<li>${scoresCount} ${plural(scoresCount, 'оценка', 'оценки', 'оценок')} навыков</li>` : ''}
-          ${calCount ? `<li>${calCount} ${plural(calCount, 'тренировка', 'тренировки', 'тренировок')} в календаре</li>` : ''}
+          ${calCount ? `<li>${calCount} ${plural(calCount, 'блок', 'блока', 'блоков')} в календаре</li>` : ''}
           ${statsCount ? `<li>${statsCount} ${plural(statsCount, 'строка', 'строки', 'строк')} статистики</li>` : ''}
           ${testsCount ? `<li>${testsCount} ${plural(testsCount, 'тест', 'теста', 'тестов')}</li>` : ''}
         </ul>
@@ -173,41 +148,31 @@ function confirmDeletePlayer(pid) {
     }, 100);
   }
 }
-
 function doDeletePlayer(pid) {
   const p = DB.players.find(x => x.id === pid);
   if (!p) return;
   DB.players = DB.players.filter(x => x.id !== pid);
-  saveDB();
-  closeModal();
+  saveDB(); closeModal();
   currentPlayerId = null;
-  showScreen('players');
-  renderPlayers();
-  updateNotifBadge();
+  showScreen('players'); renderPlayers(); updateNotifBadge();
   toast(`Игрок «${p.fio}» удалён`);
 }
+function deletePlayerFromTile(event, pid) { event.stopPropagation(); confirmDeletePlayer(pid); }
 
-function deletePlayerFromTile(event, pid) {
-  event.stopPropagation();
-  confirmDeletePlayer(pid);
-}
-
-/* ===== Открытие карточки игрока ===== */
 function openPlayer(id) {
   currentPlayerId = id;
   currentTab = 'tech';
   const p = DB.players.find(x => x.id === id);
   if (!p) return;
   currentPlanMonth = null;
+  playerCalMonth = null;
   showScreen('player');
   renderPlayerCard(p);
 }
 
-/* ===== Карточка игрока ===== */
 function renderPlayerCard(p) {
   const el = document.getElementById('player-card');
   if (!el) return;
-
   const s = getCurrentScores(p);
   const sEnd = getEndScores(p);
   const age = computeAge(p);
@@ -300,7 +265,7 @@ function renderPlayerCard(p) {
       btn.classList.add('active');
       document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
       if (btn.dataset.tab === 'charts')   drawTestCharts(p);
-      if (btn.dataset.tab === 'calendar') renderPlayerCalendarTabContent(p);
+      if (btn.dataset.tab === 'calendar') renderPlayerCalendarContent(p);
       if (btn.dataset.tab === 'plan')     renderPlanContent(p);
     });
   });
@@ -308,19 +273,16 @@ function renderPlayerCard(p) {
   drawRadar(p);
   drawRadarCompare(p);
   if (currentTab === 'charts')   drawTestCharts(p);
-  if (currentTab === 'calendar') renderPlayerCalendarTabContent(p);
+  if (currentTab === 'calendar') renderPlayerCalendarContent(p);
   if (currentTab === 'plan')     renderPlanContent(p);
 }
 
-/* ===== Обновление одного поля ===== */
 function updateField(playerId, field, val) {
   const p = DB.players.find(x => x.id === playerId);
   if (!p || p[field] === val) return;
   p[field] = val;
   saveDB();
 }
-
-/* ===== Отображение оценки с прогресс-баром ===== */
 function scoreDisplay(label, val, hint) {
   const v = val != null ? val : 0;
   return `<div class="score-item">
@@ -330,164 +292,215 @@ function scoreDisplay(label, val, hint) {
     <span class="hint">${hint || ''}</span>
   </div>`;
 }
-
-/* ===== Радар ===== */
 function drawRadar(p) {
   const ctx = document.getElementById('radar-' + p.id);
   if (!ctx) return;
   const s = getCurrentScores(p);
   new Chart(ctx, {
     type: 'radar',
-    data: {
-      labels: ['Техника','Физика','Тактика','Психология'],
-      datasets: [{
-        label: p.fio,
-        data: [s.tehn, s.fiz, s.takt, s.psih],
+    data: { labels: ['Техника','Физика','Тактика','Психология'],
+      datasets: [{ label: p.fio, data: [s.tehn, s.fiz, s.takt, s.psih],
         backgroundColor: 'rgba(21,71,52,.2)', borderColor: '#154734', borderWidth: 3,
-        pointBackgroundColor: '#C8102E', pointBorderColor: '#fff', pointRadius: 6, pointHoverRadius: 8, pointBorderWidth: 2
-      }]
-    },
-    options: {
-      responsive: true, maintainAspectRatio: false,
+        pointBackgroundColor: '#C8102E', pointBorderColor: '#fff', pointRadius: 6, pointHoverRadius: 8, pointBorderWidth: 2 }] },
+    options: { responsive: true, maintainAspectRatio: false,
       scales: { r: { beginAtZero: true, max: 10, ticks: { stepSize: 2, color: '#5a6169', backdropColor: 'transparent' }, grid: { color: '#C1C6C8' }, angleLines: { color: '#C1C6C8' }, pointLabels: { font: { size: 13, weight: '900' }, color: '#154734' } } },
-      plugins: { legend: { display: false } }
-    }
+      plugins: { legend: { display: false } } }
   });
 }
-
 function drawRadarCompare(p) {
   const ctx = document.getElementById('radar2-' + p.id);
   if (!ctx) return;
   const s = getCurrentScores(p);
   const e = getEndScores(p);
   const hasEnd = [e.tehn, e.fiz, e.takt, e.psih].some(v => v != null);
-
-  const datasets = [{
-    label: 'Начало сезона',
-    data: [s.tehn, s.fiz, s.takt, s.psih],
+  const datasets = [{ label: 'Начало сезона', data: [s.tehn, s.fiz, s.takt, s.psih],
     backgroundColor: 'rgba(21,71,52,.15)', borderColor: '#154734', borderWidth: 3,
-    pointBackgroundColor: '#154734', pointRadius: 5
-  }];
-  if (hasEnd) datasets.push({
-    label: 'Конец сезона',
-    data: [e.tehn, e.fiz, e.takt, e.psih],
+    pointBackgroundColor: '#154734', pointRadius: 5 }];
+  if (hasEnd) datasets.push({ label: 'Конец сезона', data: [e.tehn, e.fiz, e.takt, e.psih],
     backgroundColor: 'rgba(200,16,46,.15)', borderColor: '#C8102E', borderWidth: 3,
-    pointBackgroundColor: '#C8102E', pointRadius: 5
-  });
-
+    pointBackgroundColor: '#C8102E', pointRadius: 5 });
   new Chart(ctx, {
     type: 'radar',
     data: { labels: ['Техника','Физика','Тактика','Психология'], datasets },
-    options: {
-      responsive: true, maintainAspectRatio: false,
+    options: { responsive: true, maintainAspectRatio: false,
       scales: { r: { beginAtZero: true, max: 10, ticks: { stepSize: 2, color: '#5a6169', backdropColor: 'transparent' }, grid: { color: '#C1C6C8' }, angleLines: { color: '#C1C6C8' }, pointLabels: { font: { size: 13, weight: '900' }, color: '#154734' } } },
-      plugins: { legend: { position: 'bottom' } }
-    }
+      plugins: { legend: { position: 'bottom' } } }
   });
 }
 
 /* ============================================================
    ВКЛАДКА «КАЛЕНДАРЬ» В КАРТОЧКЕ ИГРОКА
    ============================================================ */
-
-let playerCalMonth = null; // 'YYYY-MM'
+let playerCalMonth = null;
 
 function renderPlayerCalendarTab(p) {
   return `<div class="card">
     <h2>Календарь тренировок игрока</h2>
-    <p class="subtitle" style="margin-top:-8px">
-      Тренировки назначаются в «Календаре тренера». Здесь они отображаются автоматически.
-    </p>
+    <p class="subtitle" style="margin-top:-8px">Тренировки назначаются в «Календаре тренера». Здесь отображаются автоматически.</p>
     <div id="player-calendar-content"></div>
   </div>`;
 }
 
-function renderPlayerCalendarTabContent(p) {
+function renderPlayerCalendarContent(p) {
   const el = document.getElementById('player-calendar-content');
   if (!el) return;
 
+  const today = new Date();
+  const currentMonth = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
   const months = collectPlayerPlanMonths(p);
-  if (!months.length) {
-    el.innerHTML = `<p class="subtitle">Тренировок пока нет.</p>
-      <button class="btn" onclick="showScreen('coach-calendar')">📅 Перейти в календарь тренера</button>`;
-    return;
+  const hasAny = months.length > 0;
+
+  if (!playerCalMonth || (hasAny && !months.includes(playerCalMonth))) {
+    playerCalMonth = hasAny ? months[months.length - 1] : currentMonth;
   }
 
-  if (!playerCalMonth || !months.includes(playerCalMonth)) {
-    playerCalMonth = months[months.length - 1];
-  }
+  const [year, month] = playerCalMonth.split('-').map(Number);
 
-  const month = playerCalMonth;
-  const summary = computePlanSummary(p, month);
+  let selectMonths = months.slice();
+  if (!selectMonths.includes(currentMonth)) selectMonths.push(currentMonth);
+  selectMonths = Array.from(new Set(selectMonths)).sort();
 
-  let html = `
-    <div class="plan-controls no-print">
-      <label>Месяц:</label>
-      <select onchange="onPlayerCalMonthChange('${p.id}', this.value)">
-        ${months.map(m => `<option value="${m}" ${m === month ? 'selected' : ''}>${monthLabelFromKey(m)}</option>`).join('')}
+  el.innerHTML = `
+    <div class="player-cal-toolbar">
+      <div class="cc-nav">
+        <button class="cc-nav-btn" onclick="playerCalShiftMonth('${p.id}', -1)">‹</button>
+        <div class="cc-month-title">${MONTH_NAMES_RU[month - 1]} ${year}</div>
+        <button class="cc-nav-btn" onclick="playerCalShiftMonth('${p.id}', 1)">›</button>
+      </div>
+      <button class="btn btn-sm btn-ghost" onclick="playerCalGoToday('${p.id}')">Текущий месяц</button>
+      <select class="player-cal-month-select" onchange="onPlayerCalMonthChange('${p.id}', this.value)">
+        ${selectMonths.map(m => `<option value="${m}" ${m === playerCalMonth ? 'selected' : ''}>${monthLabelFromKey(m)}</option>`).join('')}
       </select>
+      <div class="cc-legend">
+        <span><span class="cc-dot cc-dot-self"></span> Самостоятельная</span>
+        <span><span class="cc-dot cc-dot-ind"></span> Индивидуальная</span>
+        <span><span class="cc-dot cc-dot-grp"></span> В группе</span>
+      </div>
     </div>
+    <div class="cc-month-card">
+      <div class="cc-month-wrap">
+        <div class="cc-month-head">
+          ${DOW_SHORT_RU.map((d, i) => `<div class="cc-dow-head ${i >= 5 ? 'weekend' : ''}">${d}</div>`).join('')}
+        </div>
+        <div class="cc-month-grid" id="player-month-grid"></div>
+      </div>
+    </div>
+    ${hasAny ? '' : `<p class="subtitle" style="margin-top:12px;text-align:center">У игрока пока нет тренировок. Назначьте их в «Календаре тренера» — они появятся здесь автоматически.</p>`}
   `;
 
-  if (!summary.items.length) {
-    html += '<p class="subtitle">В этом месяце тренировок нет.</p>';
-    el.innerHTML = html;
-    return;
-  }
-
-  // Группировка по дням
-  const byDay = {};
-  summary.items.forEach(it => {
-    if (!byDay[it.date]) byDay[it.date] = [];
-    byDay[it.date].push(it);
-  });
-
-  const days = Object.keys(byDay).sort();
-  html += '<div class="player-cal-list">';
-  days.forEach(date => {
-    const items = byDay[date];
-    html += `<div class="player-cal-day">
-      <div class="player-cal-date">${formatDateFull(date)}</div>
-      <div class="player-cal-sessions">`;
-
-    items.forEach(it => {
-      const color = sessionColorFromTypes(it.workTypes);
-      const wt = it.workTypes.join(', ') || '—';
-      const factCls = factClass(it.fact);
-      const factText = it.fact ? factLabel(it.fact) : '—';
-      html += `<div class="player-cal-session" style="border-left:4px solid ${color};padding-left:10px">
-        <div class="pcs-time">${escapeHtml(it.timeStart)}–${escapeHtml(it.timeEnd)} · ${it.duration} мин</div>
-        <div class="pcs-name">${escapeHtml(it.name || it.block || '')}</div>
-        <div class="pcs-wt">${escapeHtml(wt)}</div>
-        <div class="pcs-fact ${factCls}">${factText}</div>
-        ${it.note ? `<div class="pcs-note">${escapeHtml(it.note)}</div>` : ''}
-      </div>`;
-    });
-
-    html += `</div></div>`;
-  });
-  html += '</div>';
-
-  el.innerHTML = html;
+  renderPlayerMonthGrid(p, year, month);
 }
 
+function playerCalShiftMonth(pid, delta) {
+  const [y, m] = playerCalMonth.split('-').map(Number);
+  const d = new Date(y, m - 1 + delta, 1);
+  playerCalMonth = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  const p = DB.players.find(x => x.id === pid);
+  if (p) renderPlayerCalendarContent(p);
+}
+function playerCalGoToday(pid) {
+  const today = new Date();
+  playerCalMonth = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
+  const p = DB.players.find(x => x.id === pid);
+  if (p) renderPlayerCalendarContent(p);
+}
 function onPlayerCalMonthChange(pid, month) {
   playerCalMonth = month;
   const p = DB.players.find(x => x.id === pid);
-  if (p) renderPlayerCalendarTabContent(p);
+  if (p) renderPlayerCalendarContent(p);
 }
 
-function sessionColorFromTypes(types) {
-  const wt = types || [];
-  if (wt.includes('В группе')) return WORK_TYPE_COLORS['В группе'];
-  if (wt.includes('Индивидуальная с тренером')) return WORK_TYPE_COLORS['Индивидуальная с тренером'];
-  if (wt.includes('Самостоятельная')) return WORK_TYPE_COLORS['Самостоятельная'];
+function renderPlayerMonthGrid(p, year, month) {
+  const grid = document.getElementById('player-month-grid');
+  if (!grid) return;
+  const first = new Date(year, month - 1, 1);
+  let dow = first.getDay(); if (dow === 0) dow = 7;
+  const firstMonday = new Date(year, month - 1, 1 - (dow - 1));
+  const today = localDateStr(new Date());
+  const days = [];
+  for (let i = 0; i < 42; i++) { const d = new Date(firstMonday); d.setDate(firstMonday.getDate() + i); days.push(d); }
+  while (days.length > 35) {
+    const lastWeek = days.slice(-7);
+    if (lastWeek.every(d => d.getMonth() !== (month - 1))) days.length -= 7;
+    else break;
+  }
+
+  let html = '';
+  days.forEach(d => {
+    const ds = localDateStr(d);
+    const isOther = d.getMonth() !== (month - 1);
+    const isWeekend = (d.getDay() === 0 || d.getDay() === 6);
+    const isToday = ds === today;
+    const day = (p.calendar && p.calendar[ds]) || [];
+    const sessions = Array.isArray(day) ? day : [];
+    const allBlocks = [];
+    sessions.forEach(sess => (sess.blocks || []).forEach(b => allBlocks.push({ ...b, sessionId: sess.id })));
+    const visible = allBlocks.slice(0, 3);
+
+    html += `<div class="cc-day ${isOther ? 'other-month' : ''} ${isWeekend ? 'weekend' : ''} ${isToday ? 'today' : ''}"
+                  onclick="openPlayerDaySessions('${p.id}','${ds}')">
+      <div class="cc-day-head">
+        <span class="cc-day-num ${isToday ? 'today-badge' : ''}">${d.getDate()}</span>
+        ${allBlocks.length ? `<span class="cc-day-total">${allBlocks.length}</span>` : ''}
+      </div>
+      <div class="cc-day-bars">
+        ${visible.map(b => {
+          const color = playerBlockColor(b);
+          return `<div class="cc-day-bar" style="background:${color}">
+            ${b.startTime ? `<span class="cc-bar-time">${escapeHtml(b.startTime)}</span>` : ''}
+            <span class="cc-bar-label">${escapeHtml(b.complex || 'Блок')}</span>
+          </div>`;
+        }).join('')}
+        ${allBlocks.length > 3 ? `<div class="cc-more">+${allBlocks.length - 3} ещё</div>` : ''}
+      </div>
+    </div>`;
+  });
+  grid.innerHTML = html;
+}
+
+function playerBlockColor(b) {
+  const f = b.format || '';
+  if (f === 'В группе') return WORK_TYPE_COLORS['В группе'];
+  if (f === 'Индивидуальная с тренером') return WORK_TYPE_COLORS['Индивидуальная с тренером'];
+  if (f === 'Самостоятельная') return WORK_TYPE_COLORS['Самостоятельная'];
   return '#5a6169';
 }
 
-/* ============================================================
-   ТАБЛИЦА ТЕХНИКИ
-   ============================================================ */
+function openPlayerDaySessions(pid, ds) {
+  const p = DB.players.find(x => x.id === pid);
+  if (!p) return;
+  const day = (p.calendar && p.calendar[ds]) || [];
+  const sessions = Array.isArray(day) ? day : [];
+  const allBlocks = [];
+  sessions.forEach(sess => (sess.blocks || []).forEach(b => allBlocks.push(b)));
+  const title = formatDateFull(ds);
+
+  const listHtml = allBlocks.length
+    ? allBlocks.map(b => {
+        const color = playerBlockColor(b);
+        const end = minutesToTime(timeToMinutes(b.startTime) + (Number(b.duration) || 0));
+        const fact = b.fact ? factLabel(b.fact) : '—';
+        const factCls = factClass(b.fact);
+        return `<div class="cc-sess-item" style="border-left-color:${color}">
+          <div class="cc-sess-main">
+            <div class="cc-sess-time">${escapeHtml(b.startTime || '')}–${end} · ${Number(b.duration) || 0} мин</div>
+            <div class="cc-sess-name">${escapeHtml(b.complex || 'Блок')}</div>
+            <div class="cc-sess-meta">${escapeHtml(b.format || '—')}</div>
+            <div class="cc-sess-meta" style="margin-top:4px">Факт: <span class="pcs-fact ${factCls}" style="display:inline-block;padding:1px 8px;font-size:11px">${escapeHtml(fact)}</span></div>
+            ${b.comment ? `<div class="cc-sess-note">Примечание: ${escapeHtml(b.comment)}</div>` : ''}
+          </div>
+        </div>`;
+      }).join('')
+    : '<p class="subtitle" style="text-align:center;padding:20px 0">На этот день блоков нет.</p>';
+
+  openModal(`<h3>${escapeHtml(title)}</h3>
+    <div class="cc-day-list">${listHtml}</div>
+    <div class="btn-row" style="margin-top:16px">
+      <button class="btn-ghost btn" onclick="closeModal()">Закрыть</button>
+    </div>`);
+}
+
+/* ===== ТЕХНИКА ===== */
 function renderTechTable(p) {
   let rows = '', lastGroup = '', lastSub = '';
   p.techDetail.forEach((r, i) => {
@@ -505,25 +518,11 @@ function renderTechTable(p) {
     <div style="overflow-x:auto"><table><thead><tr><th>Раздел</th><th>Подраздел</th><th>№</th><th>Критерий</th><th>Начало</th><th>Середина</th><th>Конец</th></tr></thead>
     <tbody>${rows}</tbody></table></div></div>`;
 }
-
 function countGroup(a, g) { return a.filter(x => x.group === g).length; }
+function updateTech(pid, i, f, v) { const p = DB.players.find(x => x.id === pid); p.techDetail[i][f] = v === '' ? null : Number(v); saveDB(); refreshProfile(pid); }
+function updateTechName(pid, i, f, v) { const p = DB.players.find(x => x.id === pid); v = v.trim(); if (!v || p.techDetail[i][f] === v) return; p.techDetail[i][f] = v; saveDB(); }
 
-function updateTech(pid, i, f, v) {
-  const p = DB.players.find(x => x.id === pid);
-  p.techDetail[i][f] = v === '' ? null : Number(v);
-  saveDB(); refreshProfile(pid);
-}
-function updateTechName(pid, i, f, v) {
-  const p = DB.players.find(x => x.id === pid);
-  v = v.trim();
-  if (!v || p.techDetail[i][f] === v) return;
-  p.techDetail[i][f] = v;
-  saveDB();
-}
-
-/* ============================================================
-   ТАБЛИЦА ФИЗ/ТАКТ/ПСИХ
-   ============================================================ */
+/* ===== ФИЗ/ТАКТ/ПСИХ ===== */
 function renderOtherTable(p) {
   let rows = '', lastGroup = '', lastSub = '';
   p.otherDetail.forEach((r, i) => {
@@ -541,21 +540,9 @@ function renderOtherTable(p) {
     <div style="overflow-x:auto"><table><thead><tr><th>Раздел</th><th>Подраздел</th><th>№</th><th>Критерий</th><th>Начало</th><th>План</th><th>Факт</th></tr></thead>
     <tbody>${rows}</tbody></table></div></div>`;
 }
+function updateOther(pid, i, f, v) { const p = DB.players.find(x => x.id === pid); p.otherDetail[i][f] = v === '' ? null : Number(v); saveDB(); refreshProfile(pid); }
+function updateOtherName(pid, i, f, v) { const p = DB.players.find(x => x.id === pid); v = v.trim(); if (!v || p.otherDetail[i][f] === v) return; p.otherDetail[i][f] = v; saveDB(); }
 
-function updateOther(pid, i, f, v) {
-  const p = DB.players.find(x => x.id === pid);
-  p.otherDetail[i][f] = v === '' ? null : Number(v);
-  saveDB(); refreshProfile(pid);
-}
-function updateOtherName(pid, i, f, v) {
-  const p = DB.players.find(x => x.id === pid);
-  v = v.trim();
-  if (!v || p.otherDetail[i][f] === v) return;
-  p.otherDetail[i][f] = v;
-  saveDB();
-}
-
-/* ===== Обновление карточки без потери скролла/вкладки ===== */
 function refreshProfile(pid) {
   const p = DB.players.find(x => x.id === pid);
   if (!p) return;
@@ -568,9 +555,7 @@ function refreshProfile(pid) {
   window.scrollTo(0, scrollY);
 }
 
-/* ============================================================
-   СТАТИСТИКА
-   ============================================================ */
+/* ===== СТАТИСТИКА ===== */
 function renderStats(p) {
   let rows = p.stats.map((s, i) => {
     if (s.season && !s.club) return `<tr class="section-row"><td colspan="7">${escapeHtml(s.season)}</td></tr>`;
@@ -591,48 +576,22 @@ function renderStats(p) {
     <div style="overflow-x:auto"><table><thead><tr><th>Клуб / турнир</th><th>Игры</th><th>Голы</th><th>Передачи</th><th>Очки</th><th>+/-</th><th></th></tr></thead>
     <tbody>${rows}</tbody></table></div></div>`;
 }
+function updateStat(pid, i, f, v) { const p = DB.players.find(x => x.id === pid); p.stats[i][f] = (f === 'club' || f === 'season') ? v : (v === '' ? '' : Number(v)); saveDB(); }
+function addStat(pid) { const p = DB.players.find(x => x.id === pid); p.stats.push({ season: '', club: '', games: '', goals: '', assists: '', points: '', plus: '' }); saveDB(); refreshProfile(pid); }
+function addStatSection(pid) { const p = DB.players.find(x => x.id === pid); const name = prompt('Название раздела:'); if (!name) return; p.stats.push({ season: name, club: '', games: '', goals: '', assists: '', points: '', plus: '' }); saveDB(); refreshProfile(pid); }
+function removeStat(pid, i) { const p = DB.players.find(x => x.id === pid); p.stats.splice(i, 1); saveDB(); refreshProfile(pid); }
 
-function updateStat(pid, i, f, v) {
-  const p = DB.players.find(x => x.id === pid);
-  p.stats[i][f] = (f === 'club' || f === 'season') ? v : (v === '' ? '' : Number(v));
-  saveDB();
-}
-function addStat(pid) {
-  const p = DB.players.find(x => x.id === pid);
-  p.stats.push({ season: '', club: '', games: '', goals: '', assists: '', points: '', plus: '' });
-  saveDB(); refreshProfile(pid);
-}
-function addStatSection(pid) {
-  const p = DB.players.find(x => x.id === pid);
-  const name = prompt('Название раздела:');
-  if (!name) return;
-  p.stats.push({ season: name, club: '', games: '', goals: '', assists: '', points: '', plus: '' });
-  saveDB(); refreshProfile(pid);
-}
-function removeStat(pid, i) {
-  const p = DB.players.find(x => x.id === pid);
-  p.stats.splice(i, 1); saveDB(); refreshProfile(pid);
-}
-
-/* ============================================================
-   ТЕСТЫ
-   ============================================================ */
+/* ===== ТЕСТЫ ===== */
 function renderTests(p) {
   const cols = getTestColumns();
-  const headHtml = `<th>Дата</th>` + cols.map(c =>
-    `<th><span class="editable-name" contenteditable="true" onblur="renameTestColumn('${c.key}', this.innerText)">${escapeHtml(c.label)}</span></th>`
-  ).join('') + `<th class="no-print"></th>`;
-
+  const headHtml = `<th>Дата</th>` + cols.map(c => `<th><span class="editable-name" contenteditable="true" onblur="renameTestColumn('${c.key}', this.innerText)">${escapeHtml(c.label)}</span></th>`).join('') + `<th class="no-print"></th>`;
   let rows = (p.tests || []).map((t, i) => {
-    const cells = cols.map(c =>
-      `<td><input class="cell" value="${escapeAttr(t[c.key] || '')}" onchange="updateTest('${p.id}',${i},'${c.key}',this.value)"></td>`
-    ).join('');
+    const cells = cols.map(c => `<td><input class="cell" value="${escapeAttr(t[c.key] || '')}" onchange="updateTest('${p.id}',${i},'${c.key}',this.value)"></td>`).join('');
     return `<tr>
       <td><input class="cell" type="date" value="${t.date || ''}" onchange="updateTest('${p.id}',${i},'date',this.value)"></td>
       ${cells}
       <td class="no-print"><button class="btn btn-sm btn-ghost" onclick="removeTest('${p.id}',${i})">×</button></td></tr>`;
   }).join('');
-
   return `<div class="card"><h2>Тесты</h2>
     <p class="subtitle" style="margin-top:-8px">Названия столбцов редактируются кликом.</p>
     <div class="btn-row no-print">
@@ -642,50 +601,19 @@ function renderTests(p) {
     <div style="overflow-x:auto"><table><thead><tr>${headHtml}</tr></thead>
     <tbody>${rows}</tbody></table></div></div>`;
 }
-
 function renameTestColumn(key, newLabel) {
   newLabel = (newLabel || '').trim();
   if (!newLabel) return;
-  if (!Array.isArray(DB.testColumns) || !DB.testColumns.length) {
-    DB.testColumns = DEFAULT_TEST_COLUMNS.map(c => ({ ...c }));
-  }
+  if (!Array.isArray(DB.testColumns) || !DB.testColumns.length) DB.testColumns = DEFAULT_TEST_COLUMNS.map(c => ({ ...c }));
   const col = DB.testColumns.find(c => c.key === key);
-  if (col && col.label !== newLabel) {
-    col.label = newLabel;
-    saveDB();
-  }
+  if (col && col.label !== newLabel) { col.label = newLabel; saveDB(); }
 }
+function resetTestColumns() { if (!confirm('Сбросить названия столбцов тестов на стандартные?')) return; DB.testColumns = DEFAULT_TEST_COLUMNS.map(c => ({ ...c })); saveDB(); if (currentPlayerId) refreshProfile(currentPlayerId); }
+function updateTest(pid, i, f, v) { const p = DB.players.find(x => x.id === pid); p.tests[i][f] = v; saveDB(); }
+function addTest(pid) { const p = DB.players.find(x => x.id === pid); if (!p.tests) p.tests = []; const newRow = { date: '' }; getTestColumns().forEach(c => newRow[c.key] = ''); p.tests.push(newRow); saveDB(); refreshProfile(pid); }
+function removeTest(pid, i) { const p = DB.players.find(x => x.id === pid); p.tests.splice(i, 1); saveDB(); refreshProfile(pid); }
 
-function resetTestColumns() {
-  if (!confirm('Сбросить названия столбцов тестов на стандартные?')) return;
-  DB.testColumns = DEFAULT_TEST_COLUMNS.map(c => ({ ...c }));
-  saveDB();
-  if (currentPlayerId) refreshProfile(currentPlayerId);
-}
-
-function updateTest(pid, i, f, v) {
-  const p = DB.players.find(x => x.id === pid);
-  p.tests[i][f] = v;
-  saveDB();
-}
-
-function addTest(pid) {
-  const p = DB.players.find(x => x.id === pid);
-  if (!p.tests) p.tests = [];
-  const newRow = { date: '' };
-  getTestColumns().forEach(c => newRow[c.key] = '');
-  p.tests.push(newRow);
-  saveDB(); refreshProfile(pid);
-}
-
-function removeTest(pid, i) {
-  const p = DB.players.find(x => x.id === pid);
-  p.tests.splice(i, 1); saveDB(); refreshProfile(pid);
-}
-
-/* ============================================================
-   ГРАФИКИ ТЕСТОВ
-   ============================================================ */
+/* ===== ГРАФИКИ ТЕСТОВ ===== */
 function renderTestCharts(p) {
   return `<div class="card"><h2>Динамика тестов</h2>
     <p class="subtitle" style="margin-top:-8px">Линейные графики по датам замеров</p>
@@ -698,38 +626,23 @@ function renderTestCharts(p) {
       <div><h3>Общий прогресс</h3><div class="chart-box"><canvas id="ch-overall-${p.id}"></canvas></div></div>
     </div></div>`;
 }
-
 function drawTestCharts(p) {
   const tests = (p.tests || []).filter(t => t.date).slice().sort((a, b) => a.date.localeCompare(b.date));
   const labels = tests.map(t => formatDate(t.date));
   const num = v => v === '' || v == null ? null : Number(v);
-
   const makeChart = (id, data, label, color, reverse = false) => {
-    const ctx = document.getElementById(id);
-    if (!ctx) return;
-    new Chart(ctx, {
-      type: 'line',
-      data: { labels, datasets: [{ label, data,
-        borderColor: color, backgroundColor: color + '22',
-        borderWidth: 3, tension: .3, fill: true,
-        pointBackgroundColor: color, pointRadius: 5, pointHoverRadius: 7, spanGaps: true }] },
-      options: {
-        responsive: true, maintainAspectRatio: false,
+    const ctx = document.getElementById(id); if (!ctx) return;
+    new Chart(ctx, { type: 'line',
+      data: { labels, datasets: [{ label, data, borderColor: color, backgroundColor: color + '22', borderWidth: 3, tension: .3, fill: true, pointBackgroundColor: color, pointRadius: 5, pointHoverRadius: 7, spanGaps: true }] },
+      options: { responsive: true, maintainAspectRatio: false,
         plugins: { legend: { display: false } },
-        scales: {
-          y: { beginAtZero: !reverse, reverse, grid: { color: '#e8eaec' }, ticks: { color: '#5a6169' } },
-          x: { grid: { display: false }, ticks: { color: '#5a6169' } }
-        }
-      }
-    });
+        scales: { y: { beginAtZero: !reverse, reverse, grid: { color: '#e8eaec' }, ticks: { color: '#5a6169' } }, x: { grid: { display: false }, ticks: { color: '#5a6169' } } } } });
   };
-
   makeChart('ch-vertical-' + p.id, tests.map(t => num(t.vertical)), 'Прыжок, см', '#154734');
   makeChart('ch-sprint-' + p.id,   tests.map(t => num(t.sprint)),   'Спринт, с', '#C8102E', true);
   makeChart('ch-bench-' + p.id,    tests.map(t => num(t.bench)),    'Жим, кг', '#1e5a44');
   makeChart('ch-squat-' + p.id,    tests.map(t => num(t.squat)),    'Присед, кг', '#9a0c23');
   makeChart('ch-pullups-' + p.id,  tests.map(t => num(t.pullups)),  'Подтягивания', '#5a6169');
-
   const overall = tests.map(t => {
     const vals = [];
     if (num(t.vertical)) vals.push(Math.min(100, num(t.vertical) / 80 * 100));
@@ -742,9 +655,6 @@ function drawTestCharts(p) {
   makeChart('ch-overall-' + p.id, overall, 'Общий прогресс, %', '#C8102E');
 }
 
-/* ============================================================
-   ФОТО
-   ============================================================ */
 function uploadPhoto(pid) {
   const input = document.createElement('input');
   input.type = 'file'; input.accept = 'image/*';
@@ -758,14 +668,12 @@ function uploadPhoto(pid) {
         const c = document.createElement('canvas');
         const max = 400;
         let w = img.width, h = img.height;
-        if (w > h) { if (w > max) { h = h * max / w; w = max; } }
-        else       { if (h > max) { w = w * max / h; h = max; } }
+        if (w > h) { if (w > max) { h = h * max / w; w = max; } } else { if (h > max) { w = w * max / h; h = max; } }
         c.width = w; c.height = h;
         c.getContext('2d').drawImage(img, 0, 0, w, h);
         const p = DB.players.find(x => x.id === pid);
         p.photo = c.toDataURL('image/jpeg', 0.8);
-        saveDB();
-        refreshProfile(pid);
+        saveDB(); refreshProfile(pid);
       };
       img.src = ev.target.result;
     };
@@ -774,9 +682,6 @@ function uploadPhoto(pid) {
   input.click();
 }
 
-/* ============================================================
-   ЗАГОТОВКИ
-   ============================================================ */
 function defaultTechDetail() {
   return [
     ['Катание','Посадка','Ноги'],['Катание','Посадка','Спина'],['Катание','Посадка','Руки'],['Катание','Посадка','Голова'],
@@ -790,7 +695,6 @@ function defaultTechDetail() {
     ['Броски','Щелчок','Точность'],['Броски','Щелчок','Сила'],['Броски','В касание','Точность'],['Броски','В касание','Сила']
   ].map(([group, sub, name]) => ({ group, sub, name, start: null, mid: null, end: null }));
 }
-
 function defaultOtherDetail() {
   return [
     ['Физические качества','Сила','Общая'],['Физические качества','Сила','Взрывная'],

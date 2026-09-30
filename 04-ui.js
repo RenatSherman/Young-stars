@@ -1,22 +1,15 @@
 /* ============================================================
    04-ui.js
-   Навигация, бургер-меню, уведомления, рендер игроков,
-   дашборд. Работает с новым форматом календаря.
-   Загружается после 03-sync.js.
+   Навигация, бургер-меню, уведомления, рендер игроков, дашборд.
+   Миграция календаря приводит старые форматы к новому с блоками.
    ============================================================ */
 
-/* ===== Навигация ===== */
-function goHome() {
-  currentPlayerId = null;
-  currentTab = 'tech';
-  showScreen('players');
-}
+function goHome() { currentPlayerId = null; currentTab = 'tech'; showScreen('players'); }
 
 function showScreen(name) {
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
   const target = document.getElementById('screen-' + name);
   if (target) target.classList.add('active');
-
   document.querySelectorAll('nav button[data-screen]').forEach(b => {
     b.classList.toggle('active', b.dataset.screen === name);
   });
@@ -39,19 +32,15 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 });
 
-/* ===== Бургер-меню ===== */
 function toggleMobileNav(e) {
   if (e) e.stopPropagation();
   const nav = document.getElementById('main-nav');
-  if (!nav) return;
-  nav.classList.toggle('open');
+  if (nav) nav.classList.toggle('open');
 }
-
 function closeMobileNav() {
   const nav = document.getElementById('main-nav');
   if (nav) nav.classList.remove('open');
 }
-
 document.addEventListener('click', e => {
   const nav = document.getElementById('main-nav');
   if (!nav || !nav.classList.contains('open')) return;
@@ -60,39 +49,19 @@ document.addEventListener('click', e => {
 });
 
 /* ============================================================
-   МИГРАЦИЯ СТАРОГО ФОРМАТА КАЛЕНДАРЯ
-   ============================================================
-   Старый формат: p.calendar[date][time] = { ex, note, wt[], groupId }
-   Новый формат:  p.calendar[date] = [ { id, name, timeStart, timeEnd,
-                                         block, workTypes[], note,
-                                         playerIds[], groupId } ]
-
-   Всё, что было в старой структуре, группируем по groupId (если есть)
-   или по одной записи = одна тренировка.
+   МИГРАЦИЯ КАЛЕНДАРЯ
    ============================================================ */
 function migrateCalendar(p) {
   if (!p.calendar) { p.calendar = {}; return; }
-
   let needSave = false;
 
-  /* Старый формат — вложенные часы '06:00', '06:15' и т. д. */
-  const isOldFormat = Object.values(p.calendar).some(day => {
-    if (!day || Array.isArray(day)) return false;
-    return Object.keys(day).some(k => /^\d{2}:\d{2}$/.test(k));
-  });
-
-  /* Также может быть промежуточный формат: p.calendar['2026-W36'] */
   const hasWeekKeys = Object.keys(p.calendar).some(k => /^\d{4}-W\d+$/.test(k));
-
   if (hasWeekKeys) {
     const newCal = {};
     Object.keys(p.calendar).forEach(k => {
       if (/^\d{4}-W\d+$/.test(k)) {
-        const weekObj = p.calendar[k];
-        Object.keys(weekObj).forEach(date => {
-          if (/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-            newCal[date] = weekObj[date];
-          }
+        Object.keys(p.calendar[k]).forEach(date => {
+          if (/^\d{4}-\d{2}-\d{2}$/.test(date)) newCal[date] = p.calendar[k][date];
         });
       } else {
         newCal[k] = p.calendar[k];
@@ -102,50 +71,100 @@ function migrateCalendar(p) {
     needSave = true;
   }
 
-  if (!isOldFormat) return;
-
-  const newCal = {};
-
   Object.keys(p.calendar).forEach(date => {
     const day = p.calendar[date];
     if (!day) return;
-    if (Array.isArray(day)) { newCal[date] = day; return; }
 
-    /* Группируем записи по groupId */
-    const groups = {};
-    Object.keys(day).forEach(time => {
-      const c = day[time];
-      if (!c || (!c.ex && !c.note && (!c.wt || !c.wt.length))) return;
-      const key = c.groupId || ('old_' + time + '_' + Math.random().toString(36).slice(2, 6));
-      if (!groups[key]) {
-        groups[key] = {
-          id: uid('sess'),
-          name: c.ex || '',
-          timeStart: time,
-          timeEnd: time,
-          block: c.ex || '',
-          workTypes: Array.isArray(c.wt) ? c.wt.slice() : [],
-          note: c.note || '',
-          playerIds: [p.id],
-          groupId: c.groupId || null
-        };
-      } else {
-        const start = timeToMinutes(groups[key].timeStart);
-        const now = timeToMinutes(time);
-        if (now < start) groups[key].timeStart = time;
-        const end = timeToMinutes(groups[key].timeEnd);
-        if (now > end) groups[key].timeEnd = time;
-        if (c.note) groups[key].note = c.note;
-        (c.wt || []).forEach(w => { if (!groups[key].workTypes.includes(w)) groups[key].workTypes.push(w); });
-      }
-    });
+    if (Array.isArray(day) && day.every(s => s && Array.isArray(s.blocks))) {
+      day.forEach(sess => {
+        if (!sess.id) { sess.id = uid('sess'); needSave = true; }
+        (sess.blocks || []).forEach(b => {
+          if (!b.id) { b.id = uid('blk'); needSave = true; }
+          if (b.complex === undefined) b.complex = b.block || '';
+          if (b.format === undefined) b.format = (b.workTypes && b.workTypes[0]) || (b.wt && b.wt[0]) || '';
+          if (b.comment === undefined) b.comment = '';
+        });
+      });
+      return;
+    }
 
-    newCal[date] = Object.values(groups);
-    needSave = true;
+    if (!Array.isArray(day) && typeof day === 'object') {
+      p.calendar[date] = oldTimeObjectToSessions(day);
+      needSave = true;
+      return;
+    }
+
+    if (Array.isArray(day)) {
+      p.calendar[date] = day.map(oldSessionToNew).filter(Boolean);
+      needSave = true;
+    }
   });
 
-  p.calendar = newCal;
   if (needSave) saveDB();
+}
+
+function oldTimeObjectToSessions(day) {
+  const times = Object.keys(day).sort();
+  const groups = {};
+  times.forEach(time => {
+    const c = day[time];
+    if (!c) return;
+    if (!c.ex && !c.note && (!c.wt || !c.wt.length)) return;
+    const key = c.groupId || ('single_' + time + '_' + Math.random().toString(36).slice(2, 6));
+    if (!groups[key]) {
+      groups[key] = {
+        id: uid('sess'),
+        name: c.ex || '',
+        note: c.note || '',
+        groupId: c.groupId || null,
+        blocks: []
+      };
+    }
+    groups[key].blocks.push({
+      id: uid('blk'),
+      complex: c.ex || '',
+      format: (Array.isArray(c.wt) && c.wt[0]) ? c.wt[0] : '',
+      startTime: time,
+      duration: 15,
+      fact: c.fact || '',
+      comment: c.comment || '',
+      note: ''
+    });
+  });
+  const result = Object.values(groups);
+  result.forEach(s => s.blocks.sort((a, b) => (a.startTime || '').localeCompare(b.startTime || '')));
+  return result;
+}
+
+function oldSessionToNew(s) {
+  if (!s) return null;
+  if (Array.isArray(s.blocks)) {
+    if (!s.id) s.id = uid('sess');
+    return s;
+  }
+
+  const startT = s.timeStart || s.startTime || '18:00';
+  const endT = s.timeEnd || s.endTime || '';
+  let duration = Number(s.duration) || 0;
+  if (!duration && endT) duration = Math.max(0, timeToMinutes(endT) - timeToMinutes(startT));
+  if (!duration) duration = 60;
+
+  return {
+    id: s.id || uid('sess'),
+    name: s.name || s.block || '',
+    note: s.note || '',
+    groupId: s.groupId || null,
+    blocks: [{
+      id: uid('blk'),
+      complex: s.block || s.name || '',
+      format: (Array.isArray(s.workTypes) && s.workTypes[0]) || (Array.isArray(s.wt) && s.wt[0]) || '',
+      startTime: startT,
+      duration: duration,
+      fact: s.fact || '',
+      comment: s.comment || '',
+      note: ''
+    }]
+  };
 }
 
 /* ===== Уведомления ===== */
@@ -160,19 +179,17 @@ function collectNotifications() {
       const day = p.calendar[date];
       if (!Array.isArray(day)) return;
       day.forEach(sess => {
-        if (!sess || (!sess.name && !sess.note)) return;
-        const time = sess.timeStart || '';
-        const ex = sess.name || sess.block || '';
-        const who = p.fio;
-        const pid = p.id;
-
-        if (date < today) {
-          items.push({ type: 'overdue', date, time, ex, note: sess.note, who, pid, label: 'Просрочено' });
-        } else if (date === today) {
-          items.push({ type: 'today', date, time, ex, note: sess.note, who, pid, label: 'Сегодня' });
-        } else if (date <= weekAhead) {
-          items.push({ type: 'soon', date, time, ex, note: sess.note, who, pid, label: 'Скоро' });
-        }
+        if (!sess || !Array.isArray(sess.blocks)) return;
+        sess.blocks.forEach(b => {
+          if (!b) return;
+          if (!b.complex && !b.format && !b.note) return;
+          const time = b.startTime || '';
+          const ex = b.complex || b.format || '';
+          const who = p.fio, pid = p.id;
+          if (date < today) items.push({ type: 'overdue', date, time, ex, note: b.note, who, pid, label: 'Просрочено' });
+          else if (date === today) items.push({ type: 'today', date, time, ex, note: b.note, who, pid, label: 'Сегодня' });
+          else if (date <= weekAhead) items.push({ type: 'soon', date, time, ex, note: b.note, who, pid, label: 'Скоро' });
+        });
       });
     });
   });
@@ -186,23 +203,15 @@ function updateNotifBadge() {
   const urgent = items.filter(i => i.type === 'overdue' || i.type === 'today').length;
   const badge = document.getElementById('notif-badge');
   if (!badge) return;
-  if (urgent > 0) {
-    badge.textContent = urgent;
-    badge.style.display = 'block';
-  } else {
-    badge.style.display = 'none';
-  }
+  if (urgent > 0) { badge.textContent = urgent; badge.style.display = 'block'; }
+  else badge.style.display = 'none';
 }
 
 function toggleNotif(e) {
   e.stopPropagation();
   const panel = document.getElementById('notif-panel');
   const items = collectNotifications();
-
-  if (panel.classList.contains('active')) {
-    panel.classList.remove('active');
-    return;
-  }
+  if (panel.classList.contains('active')) { panel.classList.remove('active'); return; }
 
   if (!items.length) {
     panel.innerHTML = '<p class="subtitle" style="text-align:center;padding:20px 0">Нет уведомлений</p>';
@@ -219,9 +228,7 @@ function toggleNotif(e) {
 document.addEventListener('click', e => {
   const panel = document.getElementById('notif-panel');
   if (!panel) return;
-  if (!panel.contains(e.target) && !e.target.closest('.notif-btn')) {
-    panel.classList.remove('active');
-  }
+  if (!panel.contains(e.target) && !e.target.closest('.notif-btn')) panel.classList.remove('active');
 });
 
 /* ===== Список игроков ===== */
@@ -232,16 +239,11 @@ function renderPlayers() {
     el.innerHTML = '<div class="empty-state"><div class="big">🐯</div><p>Пока нет игроков.<br>Нажмите «Добавить игрока» или загрузите из Excel.</p></div>';
     return;
   }
-
   el.innerHTML = DB.players.map(p => {
-    const avatarContent = p.photo
-      ? `<img src="${p.photo}" alt="${escapeAttr(p.fio)}">`
-      : (p.fio ? escapeHtml(p.fio[0]) : '?');
-
-    return `
-    <div class="player-tile" onclick="openPlayer('${p.id}')">
+    const avatar = p.photo ? `<img src="${p.photo}" alt="${escapeAttr(p.fio)}">` : (p.fio ? escapeHtml(p.fio[0]) : '?');
+    return `<div class="player-tile" onclick="openPlayer('${p.id}')">
       <button class="tile-delete no-print" title="Удалить игрока" onclick="deletePlayerFromTile(event, '${p.id}')">🗑</button>
-      <div class="player-avatar">${avatarContent}</div>
+      <div class="player-avatar">${avatar}</div>
       <div class="player-info">
         <div class="name">${escapeHtml(p.fio || 'Без имени')}</div>
         <div class="meta">${escapeHtml(p.position || '')} · ${escapeHtml(p.team || '')}</div>
@@ -249,7 +251,6 @@ function renderPlayers() {
       <div class="player-score">${overallScore(p)}</div>
     </div>`;
   }).join('');
-
   updateNotifBadge();
 }
 
@@ -260,11 +261,8 @@ function renderDashboard() {
 
   if (!DB.players.length) {
     el.innerHTML = `
-      <div class="card">
-        <div class="empty-state"><div class="big">📊</div><p>Нет данных.</p></div>
-      </div>
-      <div class="card">
-        <h2>Быстрые переходы</h2>
+      <div class="card"><div class="empty-state"><div class="big">📊</div><p>Нет данных.</p></div></div>
+      <div class="card"><h2>Быстрые переходы</h2>
         <div class="btn-row" style="margin:0">
           <button class="btn" onclick="showScreen('coach-calendar')">📅 Календарь тренера</button>
           <button class="btn btn-red" onclick="showScreen('coach-report')">📊 Отчёт тренера</button>
@@ -274,17 +272,14 @@ function renderDashboard() {
   }
 
   const n = DB.players.length;
-
   const avgField = f => {
     const v = DB.players.map(p => getCurrentScores(p)[f]).filter(x => x != null);
     return v.length ? (v.reduce((a, b) => a + b, 0) / v.length).toFixed(1) : '—';
   };
-
   const avgOverall = (() => {
     const v = DB.players.map(p => overallScore(p)).filter(x => x !== '—');
     return v.length ? (v.reduce((a, b) => a + Number(b), 0) / v.length).toFixed(1) : '—';
   })();
-
   const upcoming = collectNotifications().filter(i => i.type !== 'overdue').slice(0, 10);
 
   el.innerHTML = `
@@ -296,7 +291,6 @@ function renderDashboard() {
         <button class="btn btn-ghost" onclick="showScreen('report')">📄 Отчёт по игрокам</button>
       </div>
     </div>
-
     <div class="dash-grid">
       <div class="kpi"><div class="lbl">Игроков</div><div class="val">${n}</div><div class="sub">в группе развития</div></div>
       <div class="kpi red"><div class="lbl">Средняя общая</div><div class="val">${avgOverall}</div><div class="sub">из 10 баллов</div></div>

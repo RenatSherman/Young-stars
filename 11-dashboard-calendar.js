@@ -1,12 +1,14 @@
 /* ============================================================
    11-dashboard-calendar.js
-   Календарь тренера — месячная сетка по принципу Google Calendar.
-   Индикаторы тренировок в ячейке, клик по дню → модалка списка.
-   Назначение тренировок нескольким игрокам сразу.
-   Загружается после 09-excel.js.
+   Календарь тренера:
+   - ячейка дня = одна ТРЕНИРОВКА (даже если внутри несколько блоков)
+   - клик по дню → модалка со списком тренировок дня
+   - клик по тренировке → редактор с блоками
+   - внутри тренировки: несколько блоков (комплекс + формат +
+     время начала + продолжительность + примечание)
    ============================================================ */
 
-/* ===== Главная функция ===== */
+/* ===== Месячная сетка ===== */
 function renderCoachCalendar() {
   const el = document.getElementById('coach-calendar-content');
   if (!el) return;
@@ -29,17 +31,19 @@ function renderCoachCalendar() {
         <button class="btn btn-sm btn-ghost" onclick="coachCalToday()">Текущий месяц</button>
         <button class="btn btn-sm" onclick="openNewSessionForDate(localDateStr(new Date()))">+ Тренировка</button>
         <div class="cc-legend">
-          <span><span class="cc-dot cc-dot-self"></span> Самостоятельно</span>
-          <span><span class="cc-dot cc-dot-ind"></span> Индивидуально</span>
+          <span><span class="cc-dot cc-dot-self"></span> Самостоятельная</span>
+          <span><span class="cc-dot cc-dot-ind"></span> Индивидуальная</span>
           <span><span class="cc-dot cc-dot-grp"></span> В группе</span>
         </div>
       </div>
     </div>
     <div class="card cc-month-card">
-      <div class="cc-month-head">
-        ${DOW_SHORT_RU.map((d, i) => `<div class="cc-dow-head ${i >= 5 ? 'weekend' : ''}">${d}</div>`).join('')}
+      <div class="cc-month-wrap">
+        <div class="cc-month-head">
+          ${DOW_SHORT_RU.map((d, i) => `<div class="cc-dow-head ${i >= 5 ? 'weekend' : ''}">${d}</div>`).join('')}
+        </div>
+        <div class="cc-month-grid" id="cc-month-grid"></div>
       </div>
-      <div class="cc-month-grid" id="cc-month-grid"></div>
     </div>
   `;
 
@@ -59,7 +63,6 @@ function coachCalToday() {
   renderCoachCalendar();
 }
 
-/* ===== Сетка месяца ===== */
 function renderCoachMonthGrid(year, month) {
   const grid = document.getElementById('cc-month-grid');
   if (!grid) return;
@@ -71,13 +74,11 @@ function renderCoachMonthGrid(year, month) {
   const today = localDateStr(new Date());
   const days = [];
 
-  // 6 недель максимум, но если хватит 5 — оставим 5
   for (let i = 0; i < 42; i++) {
     const d = new Date(firstMonday);
     d.setDate(firstMonday.getDate() + i);
     days.push(d);
   }
-  // Обрезаем лишнюю 6-ю неделю, если она вся в следующем месяце
   while (days.length > 35) {
     const lastWeek = days.slice(-7);
     if (lastWeek.every(d => d.getMonth() !== (month - 1))) {
@@ -92,28 +93,27 @@ function renderCoachMonthGrid(year, month) {
     const isWeekend = (d.getDay() === 0 || d.getDay() === 6);
     const isToday = ds === today;
 
-    const daySessions = collectDaySessions(ds);
-    const totalSessions = daySessions.length;
-
-    const visibleBars = daySessions.slice(0, 3);
+    const sessions = collectDaySessions(ds);
+    const total = sessions.length;
+    const visible = sessions.slice(0, 3);
 
     html += `<div class="cc-day ${isOther ? 'other-month' : ''} ${isWeekend ? 'weekend' : ''} ${isToday ? 'today' : ''}"
                   onclick="openDaySessions('${ds}')">
       <div class="cc-day-head">
         <span class="cc-day-num ${isToday ? 'today-badge' : ''}">${d.getDate()}</span>
-        ${totalSessions ? `<span class="cc-day-total">${totalSessions}</span>` : ''}
+        ${total ? `<span class="cc-day-total">${total}</span>` : ''}
       </div>
       <div class="cc-day-bars">
-        ${visibleBars.map(sess => {
+        ${visible.map(sess => {
           const color = sessionColor(sess);
-          const label = sess.name || sess.block || 'Тренировка';
-          const t = sess.timeStart ? `${sess.timeStart}` : '';
+          const label = sess.name || (sess.blocks[0] && sess.blocks[0].complex) || 'Тренировка';
+          const t = sessionFirstTime(sess);
           return `<div class="cc-day-bar" style="background:${color}">
             ${t ? `<span class="cc-bar-time">${escapeHtml(t)}</span>` : ''}
             <span class="cc-bar-label">${escapeHtml(label)}</span>
           </div>`;
         }).join('')}
-        ${daySessions.length > 3 ? `<div class="cc-more">+${daySessions.length - 3} ещё</div>` : ''}
+        ${sessions.length > 3 ? `<div class="cc-more">+${sessions.length - 3} ещё</div>` : ''}
       </div>
     </div>`;
   });
@@ -121,7 +121,12 @@ function renderCoachMonthGrid(year, month) {
   grid.innerHTML = html;
 }
 
-/* ===== Собираем тренировки конкретного дня ===== */
+function sessionFirstTime(sess) {
+  if (!sess || !Array.isArray(sess.blocks) || !sess.blocks.length) return '';
+  return sess.blocks[0].startTime || '';
+}
+
+/* ===== Сбор тренировок за день ===== */
 function collectDaySessions(ds) {
   const map = new Map();
 
@@ -130,38 +135,58 @@ function collectDaySessions(ds) {
     if (!Array.isArray(day)) return;
     day.forEach(sess => {
       if (!sess) return;
-      const key = sess.id || (sess.groupId ? sess.groupId + '|' + (sess.timeStart || '') : ('solo_' + p.id + '_' + (sess.timeStart || '') + '_' + (sess.name || '')));
+      const key = sess.id || (sess.groupId ? sess.groupId + '|' + ds : ('solo_' + p.id + '_' + ds + '_' + (sess.name || '')));
       if (!map.has(key)) {
         map.set(key, {
           id: sess.id,
           groupId: sess.groupId,
-          name: sess.name || sess.block || '',
-          block: sess.block || '',
-          timeStart: sess.timeStart || '',
-          timeEnd: sess.timeEnd || '',
-          workTypes: Array.isArray(sess.workTypes) ? sess.workTypes.slice() : [],
+          name: sess.name || '',
           note: sess.note || '',
+          blocks: Array.isArray(sess.blocks) ? sess.blocks.map(b => ({ ...b })) : [],
           players: []
         });
       }
-      map.get(key).players.push({ id: p.id, fio: p.fio });
+      const entry = map.get(key);
+      if (!entry.players.find(x => x.id === p.id)) {
+        entry.players.push({ id: p.id, fio: p.fio });
+      }
     });
   });
 
-  return Array.from(map.values()).sort((a, b) => (a.timeStart || '').localeCompare(b.timeStart || ''));
+  return Array.from(map.values()).sort((a, b) => {
+    const ta = sessionFirstTime(a);
+    const tb = sessionFirstTime(b);
+    return (ta || '').localeCompare(tb || '');
+  });
 }
 
-/* ===== Цвет по форме работы ===== */
 function sessionColor(sess) {
-  const wt = sess.workTypes || [];
-  if (wt.includes('В группе')) return WORK_TYPE_COLORS['В группе'];
-  if (wt.includes('Индивидуальная с тренером')) return WORK_TYPE_COLORS['Индивидуальная с тренером'];
-  if (wt.includes('Самостоятельная')) return WORK_TYPE_COLORS['Самостоятельная'];
+  const set = new Set();
+  (sess.blocks || []).forEach(b => { if (b.format) set.add(b.format); });
+  if (set.has('В группе')) return WORK_TYPE_COLORS['В группе'];
+  if (set.has('Индивидуальная с тренером')) return WORK_TYPE_COLORS['Индивидуальная с тренером'];
+  if (set.has('Самостоятельная')) return WORK_TYPE_COLORS['Самостоятельная'];
   return '#5a6169';
 }
 
+function sessionTotalMinutes(sess) {
+  return (sess.blocks || []).reduce((acc, b) => acc + (Number(b.duration) || 0), 0);
+}
+
+function sessionTimeRange(sess) {
+  if (!sess.blocks || !sess.blocks.length) return '';
+  const sorted = sess.blocks
+    .filter(b => b.startTime)
+    .sort((a, b) => (a.startTime || '').localeCompare(b.startTime || ''));
+  if (!sorted.length) return '';
+  const firstStart = sorted[0].startTime;
+  const last = sorted[sorted.length - 1];
+  const end = minutesToTime(timeToMinutes(last.startTime) + (Number(last.duration) || 0));
+  return `${firstStart}–${end}`;
+}
+
 /* ============================================================
-   МОДАЛКА ДНЯ — список тренировок
+   МОДАЛКА ДНЯ
    ============================================================ */
 function openDaySessions(ds) {
   const sessions = collectDaySessions(ds);
@@ -170,12 +195,17 @@ function openDaySessions(ds) {
   const listHtml = sessions.length
     ? sessions.map((s, i) => {
         const color = sessionColor(s);
-        const wt = s.workTypes.join(', ') || '—';
+        const total = sessionTotalMinutes(s);
+        const range = sessionTimeRange(s);
+        const blocksLine = s.blocks.length
+          ? s.blocks.map(b => `${b.complex || 'Блок'} (${b.format || '—'}, ${b.duration || 0} мин)`).join(' · ')
+          : '—';
         return `<div class="cc-sess-item" style="border-left-color:${color}">
           <div class="cc-sess-main" onclick="openSessionEditor('${ds}', ${i})">
-            <div class="cc-sess-time">${escapeHtml(s.timeStart)}–${escapeHtml(s.timeEnd)}</div>
-            <div class="cc-sess-name">${escapeHtml(s.name || s.block || 'Тренировка')}</div>
-            <div class="cc-sess-meta">${escapeHtml(wt)} · ${s.players.length} ${plural(s.players.length, 'игрок', 'игрока', 'игроков')}</div>
+            <div class="cc-sess-time">${escapeHtml(range)} · ${total} мин</div>
+            <div class="cc-sess-name">${escapeHtml(s.name || 'Тренировка')}</div>
+            <div class="cc-sess-meta">${escapeHtml(blocksLine)}</div>
+            <div class="cc-sess-meta" style="margin-top:2px">${s.players.length} ${plural(s.players.length, 'игрок', 'игрока', 'игроков')}</div>
             ${s.note ? `<div class="cc-sess-note">${escapeHtml(s.note)}</div>` : ''}
           </div>
           <button class="cc-sess-del" title="Удалить тренировку" onclick="deleteSessionFromDay('${ds}', ${i}, event)">🗑</button>
@@ -192,221 +222,346 @@ function openDaySessions(ds) {
 }
 
 /* ============================================================
-   РЕДАКТОР ТРЕНИРОВКИ
+   РЕДАКТОР ТРЕНИРОВКИ (с блоками)
    ============================================================ */
-
-/* Сохраняем между вызовами для точного сопоставления при сохранении */
 let __sessionEditContext = null;
 
-/* Открыть редактор существующей тренировки (по индексу из списка дня) */
 function openSessionEditor(ds, idx) {
   const sessions = collectDaySessions(ds);
   const s = sessions[idx];
   if (!s) return;
 
-  __sessionEditContext = { ds, original: s };
-  openSessionForm({
+  __sessionEditContext = {
     ds,
-    name: s.name,
-    block: s.block,
-    timeStart: s.timeStart,
-    timeEnd: s.timeEnd,
-    workTypes: s.workTypes,
-    note: s.note,
+    isEdit: true,
+    originalId: s.id,
+    originalGroupId: s.groupId,
+    originalBlocks: s.blocks.map(b => ({ ...b })),
+    name: s.name || '',
+    note: s.note || '',
     playerIds: s.players.map(p => p.id),
-    isEdit: true
-  });
+    blocks: s.blocks.length ? s.blocks.map(b => ({
+      complex: b.complex || '',
+      format: b.format || '',
+      startTime: b.startTime || '18:00',
+      duration: Number(b.duration) || 60,
+      note: b.note || '',
+      fact: b.fact || '',
+      comment: b.comment || ''
+    })) : [newEmptyBlock()]
+  };
+
+  renderSessionForm();
 }
 
-/* Открыть форму новой тренировки на дату */
 function openNewSessionForDate(ds) {
-  __sessionEditContext = { ds, original: null };
-  openSessionForm({
+  __sessionEditContext = {
     ds,
+    isEdit: false,
+    originalId: null,
+    originalGroupId: null,
+    originalBlocks: null,
     name: '',
-    block: '',
-    timeStart: '18:00',
-    timeEnd: '19:00',
-    workTypes: [],
     note: '',
     playerIds: [],
-    isEdit: false
-  });
+    blocks: [newEmptyBlock()]
+  };
+  renderSessionForm();
 }
 
-/* Общая форма */
-function openSessionForm({ ds, name, block, timeStart, timeEnd, workTypes, note, playerIds, isEdit }) {
+function newEmptyBlock() {
+  return {
+    complex: '',
+    format: '',
+    startTime: '18:00',
+    duration: 60,
+    note: '',
+    fact: '',
+    comment: ''
+  };
+}
+
+function renderSessionForm() {
+  const ctx = __sessionEditContext;
+  if (!ctx) return;
+
   const allBlocks = Array.from(new Set(DB.exercises.map(g => g.group)));
 
-  let options = '<option value="">— не выбрано —</option>';
-  allBlocks.forEach(v => {
-    options += `<option value="${escapeAttr(v)}" ${block === v ? 'selected' : ''}>${escapeHtml(v)}</option>`;
-  });
+  syncFormToContext();
 
-  const wtArr = workTypes || [];
-  const wtHtml = WORK_TYPES.map(t => {
-    const checked = wtArr.includes(t);
-    return `<label class="wt-chip ${checked ? 'checked' : ''}" onclick="toggleWtChip(this, event)">
-      <input type="checkbox" class="cal-wt" value="${escapeAttr(t)}" ${checked ? 'checked' : ''}>
-      <span class="dot"></span>
-      <span>${escapeHtml(t)}</span>
-    </label>`;
-  }).join('');
+  const blocksHtml = ctx.blocks.map((b, i) => renderBlockEditor(b, i, allBlocks)).join('');
+  const playersHtml = renderCoachGroupedPlayers(DB.players, ctx.playerIds);
 
-  const playersHtml = renderCoachGroupedPlayers(DB.players, playerIds || []);
-
-  openModal(`<h3>${isEdit ? 'Редактирование тренировки' : 'Новая тренировка'}</h3>
-    <p class="subtitle" style="margin-top:-8px">${escapeHtml(formatDateFull(ds))}</p>
+  openModal(`<h3>${ctx.isEdit ? 'Редактирование тренировки' : 'Новая тренировка'}</h3>
+    <p class="subtitle" style="margin-top:-8px">${escapeHtml(formatDateFull(ctx.ds))}</p>
 
     <div class="field"><label>Дата</label>
-      <input type="date" id="cc-date" value="${escapeAttr(ds)}"></div>
+      <input type="date" id="cs-date" value="${escapeAttr(ctx.ds)}"></div>
 
-    <div class="cc-time-row">
-      <div class="field"><label>Время с</label>
-        <input type="time" id="cc-time-start" value="${escapeAttr(timeStart)}"></div>
-      <div class="field"><label>Время до</label>
-        <input type="time" id="cc-time-end" value="${escapeAttr(timeEnd)}"></div>
+    <div class="field"><label>Название тренировки (необязательно)</label>
+      <input id="cs-name" value="${escapeAttr(ctx.name || '')}" placeholder="Например: Ледовая, ОФП, Игровая"></div>
+
+    <div class="field"><label>Примечание к тренировке</label>
+      <input id="cs-note" value="${escapeAttr(ctx.note || '')}" placeholder="акцент на ногах и т.п."></div>
+
+    <div class="field">
+      <label>Блоки тренировки</label>
+      <div id="cs-blocks-list">${blocksHtml}</div>
+      <div style="margin-top:8px">
+        <button type="button" class="btn btn-sm btn-ghost" onclick="addBlockToForm()">+ Добавить блок</button>
+      </div>
     </div>
-
-    <div class="field"><label>Название тренировки (коротко)</label>
-      <input id="cc-name" value="${escapeAttr(name || '')}" placeholder="Например: Ледовая, ОФП, Игровая"></div>
-
-    <div class="field"><label>Блок упражнений (из справочника)</label>
-      <select id="cc-block">${options}</select></div>
-
-    <div class="field"><label>Форма работы</label>
-      <div class="wt-chips">${wtHtml}</div>
-    </div>
-
-    <div class="field"><label>Примечание</label>
-      <input id="cc-note" value="${escapeAttr(note || '')}" placeholder="акцент на ногах и т.п."></div>
 
     <div class="field"><label>Игроки (можно несколько)</label>
       <div class="group-tools">
-        <input type="text" id="cc-grp-search" placeholder="Поиск по ФИО или команде…" oninput="filterCoachGroupPlayers()">
-        <button type="button" onclick="expandAllCoachTeams(true)">Развернуть все</button>
-        <button type="button" onclick="expandAllCoachTeams(false)">Свернуть все</button>
-        <button type="button" onclick="clearCoachGroupSelection()">Снять все</button>
+        <input type="text" id="cs-search" placeholder="Поиск по ФИО или команде…" oninput="filterCoachGroupPlayers('cs-grp-list','cs-search')">
+        <button type="button" onclick="expandAllCoachTeams('cs-grp-list', true)">Развернуть все</button>
+        <button type="button" onclick="expandAllCoachTeams('cs-grp-list', false)">Свернуть все</button>
+        <button type="button" onclick="clearCoachGroupSelection('cs-grp-list')">Снять все</button>
       </div>
-      <div class="group-list" id="cc-grp-list">${playersHtml}</div>
+      <div class="group-list" id="cs-grp-list">${playersHtml}</div>
     </div>
 
     <div class="btn-row" style="margin-top:16px">
       <button class="btn" onclick="saveSessionFromForm()">Сохранить</button>
       <button class="btn-ghost btn" onclick="closeModal()">Отмена</button>
     </div>`);
-}
 
-/* ===== Починка чипов формы работы ===== */
-function toggleWtChip(labelEl, ev) {
-  if (ev) {
-    // Не мешаем браузеру самому менять :checked, если клик был по <input>
-    // но всё равно переключаем визуал по состоянию input
-  }
-  const input = labelEl.querySelector('input.cal-wt');
-  if (!input) return;
-  // Дать браузеру обработать клик, потом синхронизировать
   setTimeout(() => {
-    labelEl.classList.toggle('checked', input.checked);
+    document.querySelectorAll('#cs-grp-list .cc-grp-player').forEach(cb => {
+      if (ctx.playerIds.includes(cb.value)) cb.checked = true;
+    });
   }, 0);
 }
 
-/* ===== Сохранение тренировки ===== */
-function saveSessionFromForm() {
-  const ds = document.getElementById('cc-date').value;
-  if (!ds) { alert('Укажите дату'); return; }
+function renderBlockEditor(block, idx, allBlocks) {
+  const complexOptions = ['<option value="">— не выбрано —</option>']
+    .concat(allBlocks.map(v => `<option value="${escapeAttr(v)}" ${block.complex === v ? 'selected' : ''}>${escapeHtml(v)}</option>`))
+    .join('');
 
-  const timeStart = document.getElementById('cc-time-start').value || '18:00';
-  const timeEnd   = document.getElementById('cc-time-end').value   || '19:00';
+  const formatOptions = ['<option value="">— не выбрано —</option>']
+    .concat(WORK_TYPES.map(v => `<option value="${escapeAttr(v)}" ${block.format === v ? 'selected' : ''}>${escapeHtml(v)}</option>`))
+    .join('');
 
-  if (timeToMinutes(timeEnd) <= timeToMinutes(timeStart)) {
-    alert('Время окончания должно быть позже начала');
-    return;
-  }
+  const startT = block.startTime || '18:00';
+  const dur = Number(block.duration) || 60;
+  const endT = minutesToTime(timeToMinutes(startT) + dur);
 
-  const name = document.getElementById('cc-name').value.trim();
-  const block = document.getElementById('cc-block').value;
-  const note = (document.getElementById('cc-note').value || '').trim();
+  return `<div class="cc-block-editor" data-block-index="${idx}">
+    <div class="cc-block-head">
+      <span class="cc-block-num">Блок #${idx + 1}</span>
+      <button type="button" class="cc-block-del" title="Удалить блок" onclick="removeBlockFromForm(${idx})">🗑</button>
+    </div>
 
-  const wt = [];
-  document.querySelectorAll('#modal-content .cal-wt:checked').forEach(cb => wt.push(cb.value));
+    <div class="field">
+      <label>Комплекс упражнений (из справочника)</label>
+      <select class="blk-complex" data-block-index="${idx}" onchange="onBlockFieldChange(${idx},'complex',this.value)">${complexOptions}</select>
+    </div>
+
+    <div class="field">
+      <label>Формат работы</label>
+      <select class="blk-format" data-block-index="${idx}" onchange="onBlockFieldChange(${idx},'format',this.value)">${formatOptions}</select>
+    </div>
+
+    <div class="cc-time-row">
+      <div class="field"><label>Время начала</label>
+        <input type="time" class="blk-start" data-block-index="${idx}" value="${escapeAttr(startT)}" onchange="onBlockStartChange(${idx}, this.value)"></div>
+      <div class="field"><label>Продолжительность, мин</label>
+        <input type="number" min="1" max="600" class="blk-dur" data-block-index="${idx}" value="${dur}" onchange="onBlockDurationChange(${idx}, this.value)"></div>
+      <div class="field"><label>Окончание</label>
+        <div class="cc-block-end" id="cs-block-end-${idx}">${endT}</div></div>
+    </div>
+
+    <div class="field">
+      <label>Примечание к блоку</label>
+      <input class="blk-note" data-block-index="${idx}" value="${escapeAttr(block.note || '')}" placeholder="например: акцент на ногах" onchange="onBlockFieldChange(${idx},'note',this.value)">
+    </div>
+  </div>`;
+}
+
+function syncFormToContext() {
+  const ctx = __sessionEditContext;
+  if (!ctx) return;
+
+  const dateEl = document.getElementById('cs-date');
+  if (dateEl) ctx.ds = dateEl.value;
+  const nameEl = document.getElementById('cs-name');
+  if (nameEl) ctx.name = nameEl.value.trim();
+  const noteEl = document.getElementById('cs-note');
+  if (noteEl) ctx.note = noteEl.value.trim();
 
   const playerIds = [];
-  document.querySelectorAll('#cc-grp-list .cc-grp-player:checked').forEach(cb => playerIds.push(cb.value));
+  document.querySelectorAll('#cs-grp-list .cc-grp-player:checked').forEach(cb => playerIds.push(cb.value));
+  ctx.playerIds = playerIds;
 
-  if (!playerIds.length) { alert('Выберите хотя бы одного игрока'); return; }
-  if (!name && !block && !note && !wt.length) {
-    alert('Заполните название, блок или форму работы');
-    return;
+  document.querySelectorAll('.cc-block-editor').forEach(el => {
+    const i = parseInt(el.dataset.blockIndex);
+    const b = ctx.blocks[i];
+    if (!b) return;
+    const complex = el.querySelector('.blk-complex')?.value;
+    const format  = el.querySelector('.blk-format')?.value;
+    const start   = el.querySelector('.blk-start')?.value;
+    const dur     = el.querySelector('.blk-dur')?.value;
+    const note    = el.querySelector('.blk-note')?.value;
+    if (complex !== undefined) b.complex = complex;
+    if (format  !== undefined) b.format  = format;
+    if (start   !== undefined) b.startTime = start;
+    if (dur     !== undefined) b.duration = Number(dur) || 0;
+    if (note    !== undefined) b.note = note;
+  });
+}
+
+function onBlockFieldChange(idx, field, value) {
+  const ctx = __sessionEditContext;
+  if (!ctx || !ctx.blocks[idx]) return;
+  ctx.blocks[idx][field] = value;
+}
+function onBlockStartChange(idx, value) {
+  const ctx = __sessionEditContext;
+  if (!ctx || !ctx.blocks[idx]) return;
+  ctx.blocks[idx].startTime = value;
+  updateBlockEndPreview(idx);
+}
+function onBlockDurationChange(idx, value) {
+  const ctx = __sessionEditContext;
+  if (!ctx || !ctx.blocks[idx]) return;
+  ctx.blocks[idx].duration = Math.max(1, Number(value) || 1);
+  updateBlockEndPreview(idx);
+}
+function updateBlockEndPreview(idx) {
+  const ctx = __sessionEditContext;
+  if (!ctx || !ctx.blocks[idx]) return;
+  const el = document.getElementById('cs-block-end-' + idx);
+  if (!el) return;
+  const b = ctx.blocks[idx];
+  el.textContent = minutesToTime(timeToMinutes(b.startTime) + (Number(b.duration) || 0));
+}
+
+function addBlockToForm() {
+  syncFormToContext();
+  const ctx = __sessionEditContext;
+  if (!ctx) return;
+
+  const last = ctx.blocks[ctx.blocks.length - 1];
+  let startTime = '18:00';
+  let duration = 60;
+  if (last) {
+    startTime = minutesToTime(timeToMinutes(last.startTime || '18:00') + (Number(last.duration) || 0));
+    duration = Number(last.duration) || 60;
+  }
+  ctx.blocks.push({
+    complex: '', format: '', startTime, duration, note: '', fact: '', comment: ''
+  });
+  renderSessionForm();
+}
+
+function removeBlockFromForm(idx) {
+  syncFormToContext();
+  const ctx = __sessionEditContext;
+  if (!ctx) return;
+
+  if (ctx.blocks.length <= 1) {
+    ctx.blocks[0] = {
+      complex: '', format: '', startTime: '18:00', duration: 60, note: '', fact: '', comment: ''
+    };
+  } else {
+    ctx.blocks.splice(idx, 1);
+  }
+  renderSessionForm();
+}
+
+/* ===== Сохранение ===== */
+function saveSessionFromForm() {
+  syncFormToContext();
+  const ctx = __sessionEditContext;
+  if (!ctx) return;
+
+  const ds = ctx.ds;
+  if (!ds) { alert('Укажите дату'); return; }
+
+  const validBlocks = [];
+  for (let i = 0; i < ctx.blocks.length; i++) {
+    const b = ctx.blocks[i];
+    const hasAny = (b.complex || '').trim() || (b.format || '').trim() || (b.note || '').trim();
+    if (!hasAny) continue;
+
+    if (!b.startTime) { alert(`Блок #${i + 1}: укажите время начала`); return; }
+    if (!b.duration || Number(b.duration) <= 0) { alert(`Блок #${i + 1}: укажите продолжительность`); return; }
+
+    validBlocks.push({
+      id: (b.id) || uid('blk'),
+      complex: (b.complex || '').trim(),
+      format: b.format || '',
+      startTime: b.startTime,
+      duration: Number(b.duration),
+      note: (b.note || '').trim(),
+      fact: b.fact || '',
+      comment: b.comment || ''
+    });
   }
 
-  const ctx = __sessionEditContext || {};
-  const original = ctx.original;
+  if (!validBlocks.length) { alert('Добавьте хотя бы один блок'); return; }
+  if (!ctx.playerIds.length) { alert('Выберите хотя бы одного игрока'); return; }
 
   const newSession = {
-    id: original && original.id ? original.id : uid('sess'),
-    name,
-    block,
-    timeStart,
-    timeEnd,
-    workTypes: wt,
-    note,
-    groupId: original && original.groupId ? original.groupId : (playerIds.length > 1 ? uid('grp') : null)
+    id: ctx.originalId || uid('sess'),
+    name: (ctx.name || '').trim(),
+    note: (ctx.note || '').trim(),
+    groupId: ctx.originalGroupId || (ctx.playerIds.length > 1 ? uid('grp') : null),
+    blocks: validBlocks
   };
 
-  /* 1. Удаляем старые записи этой тренировки у всех игроков (если редактируем) */
-  if (original && ctx.ds) {
-    removeSessionFromAllPlayers(original, ctx.ds);
-  }
-  /* 1b. Если редактирование с переносом на другую дату — удалим и с прежней даты */
-  if (original && ctx.ds && ctx.ds !== ds) {
-    removeSessionFromAllPlayers(original, ctx.ds);
+  // Удаляем старую версию у всех игроков
+  if (ctx.isEdit) {
+    DB.players.forEach(p => {
+      if (!p.calendar) return;
+      Object.keys(p.calendar).forEach(date => {
+        const day = p.calendar[date];
+        if (!Array.isArray(day)) return;
+        p.calendar[date] = day.filter(s => !sessionMatchesOriginal(s, ctx.originalId, ctx.originalGroupId, ctx.originalBlocks));
+        if (!p.calendar[date].length) delete p.calendar[date];
+      });
+    });
   }
 
-  /* 2. Добавляем новую запись всем выбранным игрокам */
-  playerIds.forEach(pid => {
+  ctx.playerIds.forEach(pid => {
     const p = DB.players.find(x => x.id === pid);
     if (!p) return;
     if (!p.calendar) p.calendar = {};
     if (!p.calendar[ds]) p.calendar[ds] = [];
-
-    /* Если редактировали у конкретного игрока, но у него уже есть запись с этим id,
-       удалим её перед добавлением */
     p.calendar[ds] = p.calendar[ds].filter(s => s.id !== newSession.id);
-    p.calendar[ds].push({ ...newSession });
+    p.calendar[ds].push({
+      id: newSession.id,
+      name: newSession.name,
+      note: newSession.note,
+      groupId: newSession.groupId,
+      blocks: newSession.blocks.map(b => ({ ...b }))
+    });
   });
 
   saveDB();
   closeModal();
+  __sessionEditContext = null;
   renderCoachCalendar();
   updateNotifBadge();
-  toast(original ? 'Тренировка обновлена' : `Тренировка назначена: ${playerIds.length} ${plural(playerIds.length, 'игрок', 'игрока', 'игроков')}`);
+  toast(ctx.isEdit ? 'Тренировка обновлена' : `Тренировка назначена: ${ctx.playerIds.length} ${plural(ctx.playerIds.length, 'игрок', 'игрока', 'игроков')}`);
 }
 
-/* Удалить тренировку (по контексту оригинала) у всех игроков */
-function removeSessionFromAllPlayers(original, ds) {
-  if (!original || !ds) return;
-  DB.players.forEach(p => {
-    if (!p.calendar || !p.calendar[ds]) return;
-    const arr = p.calendar[ds];
-    if (!Array.isArray(arr)) return;
-    p.calendar[ds] = arr.filter(s => !sameSession(s, original));
-    if (!p.calendar[ds].length) delete p.calendar[ds];
-  });
+/* Совпадение старой тренировки с редактируемой (для удаления при пересохранении) */
+function sessionMatchesOriginal(s, originalId, originalGroupId, originalBlocks) {
+  if (!s) return false;
+  if (originalId && s.id && s.id === originalId) return true;
+  if (originalGroupId && s.groupId && s.groupId === originalGroupId) return true;
+  if (originalBlocks && Array.isArray(s.blocks) && s.blocks.length && originalBlocks.length) {
+    const a = s.blocks[0], b = originalBlocks[0];
+    return (a.startTime || '') === (b.startTime || '')
+        && (a.complex || '')   === (b.complex || '')
+        && (a.format || '')    === (b.format || '');
+  }
+  return false;
 }
 
-function sameSession(a, b) {
-  if (!a || !b) return false;
-  if (a.id && b.id && a.id === b.id) return true;
-  if (a.groupId && b.groupId && a.groupId === b.groupId) return true;
-  return (
-    (a.name || a.block || '') === (b.name || b.block || '') &&
-    (a.timeStart || '') === (b.timeStart || '') &&
-    (a.timeEnd || '')   === (b.timeEnd || '')
-  );
-}
-
-/* ===== Удаление из модалки дня ===== */
+/* ===== Удаление тренировки (кнопка «🗑» в модалке дня) ===== */
 function deleteSessionFromDay(ds, idx, ev) {
   if (ev) ev.stopPropagation();
   if (!confirm('Удалить тренировку у всех игроков?')) return;
@@ -419,7 +574,7 @@ function deleteSessionFromDay(ds, idx, ev) {
     if (!p.calendar || !p.calendar[ds]) return;
     const arr = p.calendar[ds];
     if (!Array.isArray(arr)) return;
-    p.calendar[ds] = arr.filter(x => !sameSession(x, s));
+    p.calendar[ds] = arr.filter(x => !sessionMatchesOriginal(x, s.id, s.groupId, s.blocks));
     if (!p.calendar[ds].length) delete p.calendar[ds];
   });
 
@@ -471,20 +626,20 @@ function toggleCoachTeam(teamId, event) {
   if (!el) return;
   el.classList.toggle('open');
 }
-function expandAllCoachTeams(open) {
-  document.querySelectorAll('#cc-grp-list .group-team').forEach(el => el.classList.toggle('open', open));
+function expandAllCoachTeams(listId, open) {
+  document.querySelectorAll('#' + listId + ' .group-team').forEach(el => el.classList.toggle('open', open));
 }
 function selectCoachTeam(teamId, checked) {
   const el = document.getElementById(teamId);
   if (!el) return;
   el.querySelectorAll('.cc-grp-player').forEach(cb => { cb.checked = checked; });
 }
-function clearCoachGroupSelection() {
-  document.querySelectorAll('#cc-grp-list .cc-grp-player').forEach(cb => { cb.checked = false; });
+function clearCoachGroupSelection(listId) {
+  document.querySelectorAll('#' + listId + ' .cc-grp-player').forEach(cb => { cb.checked = false; });
 }
-function filterCoachGroupPlayers() {
-  const q = (document.getElementById('cc-grp-search')?.value || '').trim().toLowerCase();
-  const list = document.getElementById('cc-grp-list');
+function filterCoachGroupPlayers(listId, searchId) {
+  const q = (document.getElementById(searchId)?.value || '').trim().toLowerCase();
+  const list = document.getElementById(listId);
   if (!list) return;
 
   list.querySelectorAll('.group-team').forEach(teamEl => {

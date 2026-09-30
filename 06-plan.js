@@ -1,54 +1,78 @@
 /* ============================================================
    06-plan.js
-   План / факт — формируется АВТОМАТИЧЕСКИ из календаря тренера.
-   Группировка по формам работы, авто-объём из времени с/до.
-   Факт и примечание редактируются вручную.
-   Загружается после 05-player.js.
+   План / факт игрока:
+   - календарная сетка месяца (как в «Календаре тренера»)
+   - в дне видно: есть ли блоки, их количество
+   - клик по дню → модалка со списком блоков этого дня
+   - клик по блоку → окно отметки факта
+   - нижняя панель: объём по плану, выполнено, частично, не выполнено
    ============================================================ */
 
-/* ===== Контейнер вкладки ===== */
 function renderPlan(p) {
   return `<div class="card">
     <h2>План / факт</h2>
     <p class="subtitle" style="margin-top:-8px">
-      Формируется автоматически из «Календаря тренера». Здесь можно отметить факт выполнения и добавить примечание.
+      Данные автоматически берутся из «Календаря тренера». Кликните по дню — откроется список блоков.
     </p>
     <div id="plan-content"></div>
   </div>`;
 }
 
-/* ===== Содержимое ===== */
 function renderPlanContent(p) {
   const el = document.getElementById('plan-content');
   if (!el) return;
 
   const months = collectPlayerPlanMonths(p);
-  if (!months.length) {
-    el.innerHTML = `<p class="subtitle">В календаре тренера ещё нет тренировок для этого игрока.</p>
-      <button class="btn" onclick="showScreen('coach-calendar')">📅 Перейти в календарь тренера</button>`;
-    return;
+  const today = new Date();
+  const currentMonth = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
+  const hasAny = months.length > 0;
+
+  if (!currentPlanMonth || (hasAny && !months.includes(currentPlanMonth))) {
+    currentPlanMonth = hasAny ? months[months.length - 1] : currentMonth;
   }
 
-  if (!currentPlanMonth || !months.includes(currentPlanMonth)) {
-    currentPlanMonth = months[months.length - 1];
-  }
+  const [year, month] = currentPlanMonth.split('-').map(Number);
 
-  const month = currentPlanMonth;
-  const summary = computePlanSummary(p, month);
+  let selectMonths = months.slice();
+  if (!selectMonths.includes(currentMonth)) selectMonths.push(currentMonth);
+  selectMonths = Array.from(new Set(selectMonths)).sort();
+
+  const stats = computePlayerMonthStats(p, currentPlanMonth) || {
+    total: 0, done: 0, partial: 0, notdone: 0, volume: 0, completion: 0
+  };
 
   el.innerHTML = `
-    <div class="plan-controls no-print">
-      <label>Месяц:</label>
-      <select id="plan-month-select" onchange="onPlanMonthChange('${p.id}', this.value)">
-        ${months.map(m => `<option value="${m}" ${m === month ? 'selected' : ''}>${monthLabelFromKey(m)}</option>`).join('')}
+    <div class="player-cal-toolbar">
+      <div class="cc-nav">
+        <button class="cc-nav-btn" onclick="planCalShiftMonth('${p.id}', -1)">‹</button>
+        <div class="cc-month-title">${MONTH_NAMES_RU[month - 1]} ${year}</div>
+        <button class="cc-nav-btn" onclick="planCalShiftMonth('${p.id}', 1)">›</button>
+      </div>
+      <button class="btn btn-sm btn-ghost" onclick="planCalGoToday('${p.id}')">Текущий месяц</button>
+      <select class="player-cal-month-select" onchange="onPlanCalMonthChange('${p.id}', this.value)">
+        ${selectMonths.map(m => `<option value="${m}" ${m === currentPlanMonth ? 'selected' : ''}>${monthLabelFromKey(m)}</option>`).join('')}
       </select>
+      <div class="cc-legend">
+        <span><span class="cc-dot cc-dot-self"></span> Самостоятельная</span>
+        <span><span class="cc-dot cc-dot-ind"></span> Индивидуальная</span>
+        <span><span class="cc-dot cc-dot-grp"></span> В группе</span>
+      </div>
     </div>
-    ${renderPlanSummaryBlock(summary)}
-    ${renderPlanTable(p, month, summary)}
+    <div class="cc-month-card">
+      <div class="cc-month-wrap">
+        <div class="cc-month-head">
+          ${DOW_SHORT_RU.map((d, i) => `<div class="cc-dow-head ${i >= 5 ? 'weekend' : ''}">${d}</div>`).join('')}
+        </div>
+        <div class="cc-month-grid" id="plan-month-grid"></div>
+      </div>
+    </div>
+    ${hasAny ? '' : `<p class="subtitle" style="margin-top:12px;text-align:center">У игрока пока нет блоков. Назначьте их в «Календаре тренера» — они появятся здесь автоматически.</p>`}
+    ${renderPlanSummaryBlock(stats)}
   `;
+
+  renderPlanMonthGrid(p, year, month);
 }
 
-/* ===== Месяцы, где есть тренировки у игрока ===== */
 function collectPlayerPlanMonths(p) {
   const set = new Set();
   if (!p.calendar) return [];
@@ -65,200 +89,298 @@ function monthLabelFromKey(ym) {
   return `${MONTH_NAMES_RU[m - 1]} ${y}`;
 }
 
-/* ===== Сводка по формам работы ===== */
-function computePlanSummary(p, month) {
-  const summary = {
-    'Самостоятельная':           { count: 0, minutes: 0 },
-    'Индивидуальная с тренером': { count: 0, minutes: 0 },
-    'В группе':                  { count: 0, minutes: 0 },
-    '_total':                    { count: 0, minutes: 0 }
-  };
-  const items = [];
-
-  if (!p.calendar) return { summary, items, month };
-
-  Object.keys(p.calendar).forEach(date => {
-    if (date.slice(0, 7) !== month) return;
-    const day = p.calendar[date];
-    if (!Array.isArray(day)) return;
-
-    day.forEach(sess => {
-      if (!sess) return;
-      const dur = computeSessionDuration(sess);
-      const wt = Array.isArray(sess.workTypes) ? sess.workTypes : [];
-      const factVal = sess.fact || '';
-      const note = sess.note || '';
-
-      items.push({
-        date,
-        timeStart: sess.timeStart || '',
-        timeEnd: sess.timeEnd || '',
-        duration: dur,
-        name: sess.name || sess.block || '',
-        block: sess.block || '',
-        workTypes: wt,
-        fact: factVal,
-        note
-      });
-
-      summary._total.count++;
-      summary._total.minutes += dur;
-
-      if (!wt.length) {
-        // без формы — учтём только в общей сумме
-      } else {
-        wt.forEach(w => {
-          if (summary[w]) {
-            summary[w].count++;
-            summary[w].minutes += dur;
-          }
-        });
-      }
-    });
-  });
-
-  items.sort((a, b) => (a.date + a.timeStart).localeCompare(b.date + b.timeStart));
-  return { summary, items, month };
-}
-
-function computeSessionDuration(sess) {
-  if (!sess) return 0;
-  const t1 = timeToMinutes(sess.timeStart);
-  const t2 = timeToMinutes(sess.timeEnd);
-  return Math.max(0, t2 - t1);
-}
-
-/* ===== Блок сводки ===== */
-function renderPlanSummaryBlock(summary) {
-  const card = (label, obj, red) => `
-    <div class="plan-summary-item ${red ? 'red' : ''}">
-      <div class="lbl">${escapeHtml(label)}</div>
-      <div class="val">${obj.count} <small>трен. · ${obj.minutes} мин</small></div>
-    </div>`;
-
-  return `
-    <div class="plan-summary">
-      ${card('Самостоятельная',           summary['Самостоятельная'])}
-      ${card('Индивидуальная с тренером', summary['Индивидуальная с тренером'], true)}
-      ${card('В группе',                  summary['В группе'])}
-      ${card('Всего',                     summary._total, true)}
-    </div>`;
-}
-
-/* ===== Таблица плана ===== */
-function renderPlanTable(p, month, summary) {
-  if (!summary.items.length) {
-    return `<p class="subtitle">За этот месяц нет тренировок.</p>`;
-  }
-
-  const rows = summary.items.map((it, idx) => {
-    const factVal = it.fact || '';
-    const factCls = factClass(factVal);
-    const wtStr = it.workTypes.length ? it.workTypes.join(', ') : '—';
-
-    return `<tr>
-      <td>${formatDate(it.date)}</td>
-      <td>${escapeHtml(it.timeStart)}–${escapeHtml(it.timeEnd)}</td>
-      <td>${escapeHtml(it.name || it.block || '')}</td>
-      <td>${escapeHtml(wtStr)}</td>
-      <td>${it.duration}</td>
-      <td>
-        <select class="fact-select ${factCls}" onchange="updateSessionFact('${p.id}','${it.date}','${idx}', this.value)">
-          ${FACT_OPTIONS.map(o => `<option value="${o.value}" ${o.value === factVal ? 'selected' : ''}>${escapeHtml(o.label)}</option>`).join('')}
-        </select>
-      </td>
-      <td>
-        <textarea class="cell" rows="1" onchange="updateSessionNote('${p.id}','${it.date}','${idx}', this.value)">${escapeHtml(it.note || '')}</textarea>
-      </td>
-    </tr>`;
-  }).join('');
-
-  return `
-    <div style="overflow-x:auto;margin-top:16px">
-      <table class="plan-table">
-        <colgroup>
-          <col style="width:90px">
-          <col style="width:120px">
-          <col>
-          <col style="width:180px">
-          <col style="width:70px">
-          <col style="width:160px">
-          <col>
-        </colgroup>
-        <thead>
-          <tr>
-            <th>Дата</th>
-            <th>Время</th>
-            <th>Тренировка</th>
-            <th>Форма работы</th>
-            <th>Мин</th>
-            <th>Факт</th>
-            <th>Примечание</th>
-          </tr>
-        </thead>
-        <tbody>${rows}</tbody>
-      </table>
-    </div>`;
-}
-
-/* ===== Редактирование факта и примечания ===== */
-function updateSessionFact(pid, date, idx, value) {
+function planCalShiftMonth(pid, delta) {
+  const [y, m] = currentPlanMonth.split('-').map(Number);
+  const d = new Date(y, m - 1 + delta, 1);
+  currentPlanMonth = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
   const p = DB.players.find(x => x.id === pid);
-  if (!p || !p.calendar[date]) return;
-  const day = p.calendar[date];
-  if (!Array.isArray(day)) return;
-
-  // idx — индекс в отфильтрованном списке summary.items, но нам нужен исходный объект
-  // Проще: пересобрать через summary и сопоставить по времени/названию
-  const summary = computePlanSummary(p, currentPlanMonth);
-  const target = summary.items[idx];
-  if (!target) return;
-
-  const src = day.find(s =>
-    (s.timeStart || '') === target.timeStart &&
-    (s.name || s.block || '') === (target.name || target.block || '')
-  );
-  if (!src) return;
-  src.fact = value;
-  saveDB();
-
-  const sel = document.querySelector(`select.fact-select[onchange*="updateSessionFact('${pid}','${date}',${idx}'"]`);
-  if (sel) {
-    sel.classList.remove('done', 'partial', 'notdone');
-    const cls = factClass(value);
-    if (cls) sel.classList.add(cls);
-  }
+  if (p) renderPlanContent(p);
 }
-
-function updateSessionNote(pid, date, idx, value) {
+function planCalGoToday(pid) {
+  const today = new Date();
+  currentPlanMonth = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
   const p = DB.players.find(x => x.id === pid);
-  if (!p || !p.calendar[date]) return;
-  const day = p.calendar[date];
-  if (!Array.isArray(day)) return;
-
-  const summary = computePlanSummary(p, currentPlanMonth);
-  const target = summary.items[idx];
-  if (!target) return;
-
-  const src = day.find(s =>
-    (s.timeStart || '') === target.timeStart &&
-    (s.name || s.block || '') === (target.name || target.block || '')
-  );
-  if (!src) return;
-  src.note = value;
-  saveDB();
+  if (p) renderPlanContent(p);
 }
-
-function onPlanMonthChange(pid, month) {
+function onPlanCalMonthChange(pid, month) {
   currentPlanMonth = month;
   const p = DB.players.find(x => x.id === pid);
   if (p) renderPlanContent(p);
 }
 
-/* ============================================================
-   ОТЧЁТ ПО МЕСЯЦУ (по игрокам)
-   ============================================================ */
+function renderPlanMonthGrid(p, year, month) {
+  const grid = document.getElementById('plan-month-grid');
+  if (!grid) return;
 
+  const first = new Date(year, month - 1, 1);
+  let dow = first.getDay(); if (dow === 0) dow = 7;
+  const firstMonday = new Date(year, month - 1, 1 - (dow - 1));
+
+  const today = localDateStr(new Date());
+  const days = [];
+  for (let i = 0; i < 42; i++) {
+    const d = new Date(firstMonday);
+    d.setDate(firstMonday.getDate() + i);
+    days.push(d);
+  }
+  while (days.length > 35) {
+    const lastWeek = days.slice(-7);
+    if (lastWeek.every(d => d.getMonth() !== (month - 1))) days.length -= 7;
+    else break;
+  }
+
+  let html = '';
+  days.forEach(d => {
+    const ds = localDateStr(d);
+    const isOther = d.getMonth() !== (month - 1);
+    const isWeekend = (d.getDay() === 0 || d.getDay() === 6);
+    const isToday = ds === today;
+
+    const day = (p.calendar && p.calendar[ds]) || [];
+    const sessions = Array.isArray(day) ? day : [];
+    const allBlocks = [];
+    sessions.forEach(sess => (sess.blocks || []).forEach(b => allBlocks.push(b)));
+    const visible = allBlocks.slice(0, 3);
+
+    html += `<div class="cc-day ${isOther ? 'other-month' : ''} ${isWeekend ? 'weekend' : ''} ${isToday ? 'today' : ''}"
+                  onclick="openPlanDay('${p.id}','${ds}')">
+      <div class="cc-day-head">
+        <span class="cc-day-num ${isToday ? 'today-badge' : ''}">${d.getDate()}</span>
+        ${allBlocks.length ? `<span class="cc-day-total">${allBlocks.length}</span>` : ''}
+      </div>
+      <div class="cc-day-bars">
+        ${visible.map(b => {
+          const color = planBlockColor(b);
+          return `<div class="cc-day-bar" style="background:${color}">
+            ${b.startTime ? `<span class="cc-bar-time">${escapeHtml(b.startTime)}</span>` : ''}
+            <span class="cc-bar-label">${escapeHtml(b.complex || 'Блок')}</span>
+          </div>`;
+        }).join('')}
+        ${allBlocks.length > 3 ? `<div class="cc-more">+${allBlocks.length - 3} ещё</div>` : ''}
+      </div>
+    </div>`;
+  });
+
+  grid.innerHTML = html;
+}
+
+function planBlockColor(b) {
+  const f = b.format || '';
+  if (f === 'В группе') return WORK_TYPE_COLORS['В группе'];
+  if (f === 'Индивидуальная с тренером') return WORK_TYPE_COLORS['Индивидуальная с тренером'];
+  if (f === 'Самостоятельная') return WORK_TYPE_COLORS['Самостоятельная'];
+  return '#5a6169';
+}
+
+function openPlanDay(pid, ds) {
+  const p = DB.players.find(x => x.id === pid);
+  if (!p) return;
+
+  const day = (p.calendar && p.calendar[ds]) || [];
+  const sessions = Array.isArray(day) ? day : [];
+
+  const blocks = [];
+  sessions.forEach(sess => {
+    (sess.blocks || []).forEach((b, bi) => {
+      blocks.push({
+        sessionId: sess.id,
+        blockIndex: bi,
+        sessionName: sess.name || '',
+        complex: b.complex || '',
+        format: b.format || '',
+        startTime: b.startTime || '',
+        duration: Number(b.duration) || 0,
+        note: b.note || '',
+        fact: b.fact || '',
+        comment: b.comment || ''
+      });
+    });
+  });
+
+  const title = formatDateFull(ds);
+
+  if (!blocks.length) {
+    openModal(`<h3>${escapeHtml(title)}</h3>
+      <p class="subtitle" style="text-align:center;padding:20px 0">На этот день блоков нет.</p>
+      <div class="btn-row">
+        <button class="btn-ghost btn" onclick="closeModal()">Закрыть</button>
+      </div>`);
+    return;
+  }
+
+  const totalMin = blocks.reduce((acc, b) => acc + b.duration, 0);
+  const totalDone = blocks.filter(b => b.fact === 'done').length;
+  const totalPartial = blocks.filter(b => b.fact === 'partial').length;
+  const totalNot = blocks.filter(b => b.fact === 'notdone').length;
+
+  const listHtml = blocks.map((b, idx) => {
+    const color = planBlockColor(b);
+    const end = minutesToTime(timeToMinutes(b.startTime) + b.duration);
+    const factText = b.fact ? factLabel(b.fact) : '—';
+    const factCls = factClass(b.fact);
+    return `<div class="cc-sess-item" style="border-left-color:${color}">
+      <div class="cc-sess-main" onclick="openPlanBlockDetails('${pid}','${ds}',${idx})">
+        <div class="cc-sess-time">${escapeHtml(b.startTime)}–${end} · ${b.duration} мин</div>
+        <div class="cc-sess-name">${escapeHtml(b.complex || 'Блок')}</div>
+        <div class="cc-sess-meta">${escapeHtml(b.format || '—')}</div>
+        <div class="cc-sess-meta" style="margin-top:4px">
+          Факт: <span class="pcs-fact ${factCls}" style="display:inline-block;padding:1px 10px;font-size:11px">${escapeHtml(factText)}</span>
+        </div>
+        ${b.comment ? `<div class="cc-sess-note">Примечание: ${escapeHtml(b.comment)}</div>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+
+  openModal(`<h3>${escapeHtml(title)}</h3>
+    <div class="plan-day-summary">
+      <span class="badge">Всего блоков: ${blocks.length}</span>
+      <span class="badge">Объём: ${totalMin} мин</span>
+      <span class="badge done">Выполнено: ${totalDone}</span>
+      <span class="badge partial">Частично: ${totalPartial}</span>
+      <span class="badge notdone">Не выполнено: ${totalNot}</span>
+    </div>
+    <div class="cc-day-list">${listHtml}</div>
+    <div class="btn-row" style="margin-top:16px">
+      <button class="btn-ghost btn" onclick="closeModal()">Закрыть</button>
+    </div>`);
+}
+
+function openPlanBlockDetails(pid, ds, idxInDay) {
+  const p = DB.players.find(x => x.id === pid);
+  if (!p) return;
+
+  const day = (p.calendar && p.calendar[ds]) || [];
+  const sessions = Array.isArray(day) ? day : [];
+
+  const blocks = [];
+  sessions.forEach(sess => {
+    (sess.blocks || []).forEach((b, bi) => {
+      blocks.push({ sessionId: sess.id, blockIndex: bi, b });
+    });
+  });
+
+  const entry = blocks[idxInDay];
+  if (!entry) return;
+  const b = entry.b;
+
+  const curFact = b.fact || '';
+  const curComment = b.comment || '';
+  const end = minutesToTime(timeToMinutes(b.startTime) + (Number(b.duration) || 0));
+
+  openModal(`<h3>${escapeHtml(b.complex || 'Блок')}</h3>
+    <p class="subtitle" style="margin-top:-8px">
+      ${escapeHtml(formatDateFull(ds))} · ${escapeHtml(b.startTime || '')}–${end} · ${Number(b.duration) || 0} мин
+    </p>
+
+    <div class="plan-block-details">
+      <div class="pbd-row"><div class="pbd-lbl">Комплекс</div><div class="pbd-val">${escapeHtml(b.complex || '—')}</div></div>
+      <div class="pbd-row"><div class="pbd-lbl">Формат работы</div><div class="pbd-val">${escapeHtml(b.format || '—')}</div></div>
+      <div class="pbd-row"><div class="pbd-lbl">План</div><div class="pbd-val">${escapeHtml(b.startTime || '')}–${end}</div></div>
+      <div class="pbd-row"><div class="pbd-lbl">Объём</div><div class="pbd-val">${Number(b.duration) || 0} мин</div></div>
+      ${b.note ? `<div class="pbd-row"><div class="pbd-lbl">Примечание к плану</div><div class="pbd-val">${escapeHtml(b.note)}</div></div>` : ''}
+    </div>
+
+    <div class="field" style="margin-top:16px"><label>Факт выполнения</label>
+      <select id="fm-fact" onchange="onFactChange()">
+        <option value="" ${curFact === '' ? 'selected' : ''}>— не отмечено —</option>
+        <option value="done" ${curFact === 'done' ? 'selected' : ''}>Выполнено</option>
+        <option value="partial" ${curFact === 'partial' ? 'selected' : ''}>Выполнено частично</option>
+        <option value="notdone" ${curFact === 'notdone' ? 'selected' : ''}>Не выполнено</option>
+      </select>
+    </div>
+
+    <div class="field" id="fm-comment-wrap" style="display:none">
+      <label>Комментарий <span style="color:var(--ak-red)">*</span></label>
+      <textarea id="fm-comment" rows="3" placeholder="Что именно не выполнено и почему">${escapeHtml(curComment)}</textarea>
+    </div>
+
+    <div class="btn-row" style="margin-top:16px">
+      <button class="btn" onclick="savePlanFact('${pid}','${ds}',${idxInDay})">Сохранить</button>
+      <button class="btn-ghost btn" onclick="closeModal()">Отмена</button>
+    </div>`);
+
+  setTimeout(onFactChange, 0);
+}
+
+function onFactChange() {
+  const v = document.getElementById('fm-fact')?.value || '';
+  const wrap = document.getElementById('fm-comment-wrap');
+  if (!wrap) return;
+  if (v === 'partial' || v === 'notdone') wrap.style.display = 'block';
+  else wrap.style.display = 'none';
+}
+
+function savePlanFact(pid, ds, idxInDay) {
+  const p = DB.players.find(x => x.id === pid);
+  if (!p) return;
+
+  const day = (p.calendar && p.calendar[ds]) || [];
+  const sessions = Array.isArray(day) ? day : [];
+  const blocks = [];
+  sessions.forEach(sess => {
+    (sess.blocks || []).forEach((b, bi) => {
+      blocks.push({ sessionId: sess.id, blockIndex: bi, b });
+    });
+  });
+
+  const entry = blocks[idxInDay];
+  if (!entry) { alert('Блок не найден'); return; }
+
+  const fact = document.getElementById('fm-fact').value;
+  const comment = (document.getElementById('fm-comment').value || '').trim();
+
+  if ((fact === 'partial' || fact === 'notdone') && !comment) {
+    alert('Для этого варианта обязательно укажите комментарий');
+    return;
+  }
+
+  let saved = false;
+  sessions.forEach(sess => {
+    if (sess.id !== entry.sessionId) return;
+    if (!Array.isArray(sess.blocks)) return;
+    const b = sess.blocks[entry.blockIndex];
+    if (!b) return;
+    b.fact = fact;
+    b.comment = comment;
+    saved = true;
+  });
+
+  if (!saved) { alert('Не удалось сохранить'); return; }
+
+  saveDB();
+  closeModal();
+  renderPlanContent(p);
+}
+
+function renderPlanSummaryBlock(stats) {
+  return `
+    <div class="plan-summary" style="margin-top:16px">
+      <div class="plan-summary-item">
+        <div class="lbl">Объём по плану</div>
+        <div class="val">${stats.volume} <small>мин</small></div>
+      </div>
+      <div class="plan-summary-item">
+        <div class="lbl">Выполнено</div>
+        <div class="val" style="color:#1e7a3f">${stats.done}</div>
+      </div>
+      <div class="plan-summary-item">
+        <div class="lbl">Частично</div>
+        <div class="val" style="color:#b8860b">${stats.partial}</div>
+      </div>
+      <div class="plan-summary-item red">
+        <div class="lbl">Не выполнено</div>
+        <div class="val">${stats.notdone}</div>
+      </div>
+      <div class="plan-summary-item red">
+        <div class="lbl">% выполнения</div>
+        <div class="val">${stats.completion}%</div>
+      </div>
+    </div>`;
+}
+
+/* ============================================================
+   ОТЧЁТ ПО ИГРОКАМ
+   ============================================================ */
 function collectAllPlanMonths() {
   const set = new Set();
   DB.players.forEach(p => {
@@ -272,21 +394,31 @@ function collectAllPlanMonths() {
 }
 
 function computePlayerMonthStats(p, month) {
-  const sum = computePlanSummary(p, month);
-  const items = sum.items;
-  if (!items.length) return null;
-
-  let done = 0, partial = 0, notdone = 0, volumePlan = 0;
-  items.forEach(it => {
-    volumePlan += it.duration;
-    if (it.fact === 'done') done++;
-    else if (it.fact === 'partial') partial++;
-    else if (it.fact === 'notdone') notdone++;
+  if (!p.calendar) return null;
+  let total = 0, done = 0, partial = 0, notdone = 0, volume = 0;
+  const items = [];
+  Object.keys(p.calendar).forEach(date => {
+    if (date.slice(0, 7) !== month) return;
+    const day = p.calendar[date];
+    if (!Array.isArray(day)) return;
+    day.forEach(sess => {
+      (sess.blocks || []).forEach(b => {
+        total++;
+        volume += Number(b.duration) || 0;
+        if (b.fact === 'done') done++;
+        else if (b.fact === 'partial') partial++;
+        else if (b.fact === 'notdone') notdone++;
+        items.push({
+          date, complex: b.complex || '', format: b.format || '',
+          startTime: b.startTime || '', duration: Number(b.duration) || 0,
+          fact: b.fact || '', comment: b.comment || ''
+        });
+      });
+    });
   });
-
-  const total = items.length;
-  const completion = total ? Math.round((done + partial * 0.5) / total * 100) : 0;
-  return { total, done, partial, notdone, volumePlan, items, completion };
+  if (!total) return { total: 0, done: 0, partial: 0, notdone: 0, volume: 0, items, completion: 0 };
+  const completion = Math.round((done + partial * 0.5) / total * 100);
+  return { total, done, partial, notdone, volume, items, completion };
 }
 
 function computeAllPlayersMonthStats(month) {
@@ -294,10 +426,7 @@ function computeAllPlayersMonthStats(month) {
   DB.players.forEach(p => {
     const st = computePlayerMonthStats(p, month);
     if (!st) return;
-    total += st.total;
-    done += st.done;
-    partial += st.partial;
-    notdone += st.notdone;
+    total += st.total; done += st.done; partial += st.partial; notdone += st.notdone;
   });
   const overall = total ? Math.round((done + partial * 0.5) / total * 100) : 0;
   return { total, done, partial, notdone, overall };
@@ -310,7 +439,7 @@ function renderReport() {
   if (!monthSel || !playerSel) return;
 
   if (!months.length) {
-    document.getElementById('report-content').innerHTML = '<div class="empty-state"><div class="big">📄</div><p>Нет тренировок для отчёта.</p></div>';
+    document.getElementById('report-content').innerHTML = '<div class="empty-state"><div class="big">📄</div><p>Нет данных для отчёта.</p></div>';
     return;
   }
 
@@ -332,7 +461,7 @@ function renderReport() {
     <div class="card">
       <h2>Сводка по месяцу «${escapeHtml(monthLabelFromKey(month))}»</h2>
       <div class="dash-grid">
-        <div class="kpi"><div class="lbl">Всего тренировок</div><div class="val">${allStats.total}</div></div>
+        <div class="kpi"><div class="lbl">Всего блоков</div><div class="val">${allStats.total}</div></div>
         <div class="kpi"><div class="lbl">Выполнено</div><div class="val" style="color:#1e7a3f">${allStats.done}</div></div>
         <div class="kpi"><div class="lbl">Частично</div><div class="val" style="color:#b8860b">${allStats.partial}</div></div>
         <div class="kpi red"><div class="lbl">Не выполнено</div><div class="val">${allStats.notdone}</div></div>
@@ -341,50 +470,46 @@ function renderReport() {
     </div>`;
 
   const players = filterPid ? DB.players.filter(p => p.id === filterPid) : DB.players;
-  const anyData = players.some(p => p.calendar && Object.keys(p.calendar).some(d => d.slice(0, 7) === month && Array.isArray(p.calendar[d]) && p.calendar[d].length));
 
-  if (!anyData) {
-    html += '<div class="empty-state"><div class="big">📄</div><p>У выбранных игроков нет тренировок за этот месяц.</p></div>';
-  } else {
-    players.forEach(p => {
-      const st = computePlayerMonthStats(p, month);
-      if (!st) return;
+  players.forEach(p => {
+    const st = computePlayerMonthStats(p, month);
+    if (!st || !st.total) return;
 
-      const rows = st.items.map(it => {
-        const factCls = it.fact === 'done' ? 'fact-done'
-                     : it.fact === 'partial' ? 'fact-partial'
-                     : it.fact === 'notdone' ? 'fact-notdone'
-                     : '';
-        return `<tr class="${factCls}">
-          <td>${formatDate(it.date)}</td>
-          <td>${escapeHtml(it.timeStart)}–${escapeHtml(it.timeEnd)}</td>
-          <td>${escapeHtml(it.name || it.block || '')}</td>
-          <td>${escapeHtml(it.workTypes.join(', '))}</td>
-          <td>${it.duration}</td>
-          <td>${factLabel(it.fact)}</td>
-        </tr>`;
-      }).join('');
+    const rows = st.items.map(it => {
+      const factCls = it.fact === 'done' ? 'fact-done'
+                   : it.fact === 'partial' ? 'fact-partial'
+                   : it.fact === 'notdone' ? 'fact-notdone'
+                   : '';
+      return `<tr class="${factCls}">
+        <td>${formatDate(it.date)}</td>
+        <td>${escapeHtml(it.complex || '')}</td>
+        <td>${escapeHtml(it.format || '')}</td>
+        <td>${it.duration}</td>
+        <td>${factLabel(it.fact)}</td>
+        <td>${escapeHtml(it.comment || '')}</td>
+      </tr>`;
+    }).join('');
 
-      html += `
-        <div class="report-player">
-          <h3>${escapeHtml(p.fio)}</h3>
-          <div class="meta">${escapeHtml(p.team || '')} · ${escapeHtml(p.position || '')}</div>
-          <div class="report-summary">
-            <span class="badge done">Выполнено: ${st.done}</span>
-            <span class="badge partial">Частично: ${st.partial}</span>
-            <span class="badge notdone">Не выполнено: ${st.notdone}</span>
-            <span class="badge">Всего: ${st.total}</span>
-            <span class="badge">Объём: ${st.volumePlan} мин</span>
-          </div>
-          <div class="report-progress"><span style="width:${st.completion}%"></span></div>
-          <div style="font-size:12px;font-weight:700;color:var(--ak-green);margin-bottom:10px">Выполнение: ${st.completion}%</div>
-          ${st.items.length ? `<table class="report-table">
-            <thead><tr><th>Дата</th><th>Время</th><th>Тренировка</th><th>Форма работы</th><th>Мин</th><th>Факт</th></tr></thead>
-            <tbody>${rows}</tbody>
-          </table>` : ''}
-        </div>`;
-    });
-  }
+    html += `
+      <div class="report-player">
+        <h3>${escapeHtml(p.fio)}</h3>
+        <div class="meta">${escapeHtml(p.team || '')} · ${escapeHtml(p.position || '')}</div>
+        <div class="report-summary">
+          <span class="badge done">Выполнено: ${st.done}</span>
+          <span class="badge partial">Частично: ${st.partial}</span>
+          <span class="badge notdone">Не выполнено: ${st.notdone}</span>
+          <span class="badge">Всего: ${st.total}</span>
+          <span class="badge">Объём: ${st.volume} мин</span>
+        </div>
+        <div class="report-progress"><span style="width:${st.completion}%"></span></div>
+        <div style="font-size:12px;font-weight:700;color:var(--ak-green);margin-bottom:10px">Выполнение: ${st.completion}%</div>
+        <table class="report-table">
+          <thead><tr><th>Дата</th><th>Комплекс</th><th>Формат</th><th>Мин</th><th>Факт</th><th>Примечание</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>`;
+  });
+
   document.getElementById('report-content').innerHTML = html;
 }
 

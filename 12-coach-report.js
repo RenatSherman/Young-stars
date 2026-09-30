@@ -1,8 +1,6 @@
 /* ============================================================
    12-coach-report.js
-   Отчёт тренера: KPI, графики, тепловая карта, экспорт в PDF.
-   Работает с новым форматом календаря.
-   Загружается после 11-dashboard-calendar.js.
+   Отчёт тренера: считаем по блокам (комплекс+формат+начало+длит.)
    ============================================================ */
 
 let coachReportMonth = null;
@@ -30,21 +28,21 @@ function getMonthLabel(ym) {
   return `${MONTH_NAMES_RU[m - 1]} ${y}`;
 }
 
-/* ===== Статистика за месяц ===== */
 function computeCoachReportStats(month) {
   const [year, monthNum] = month.split('-').map(Number);
   const daysInMonth = new Date(year, monthNum, 0).getDate();
 
-  const sessions = new Map();  // уникальные тренировки
-  const byDate = {};           // 'YYYY-MM-DD' -> count
-  const byHour = {};           // 'HH' -> count
-  const byDow  = [0, 0, 0, 0, 0, 0, 0]; // Пн..Вс
-  const byWorkType = { 'Самостоятельная': 0, 'Индивидуальная с тренером': 0, 'В группе': 0, '—': 0 };
-  const byPlayer = {};         // pid -> { fio, total, solo, ind, grp, minutes }
+  const uniqueBlocks = new Map();
+  const byDate = {};
+  const byHour = {};
+  const byDow = [0,0,0,0,0,0,0];
+  const byFormat = { 'Самостоятельная': 0, 'Индивидуальная с тренером': 0, 'В группе': 0, '—': 0 };
+  const byFact = { 'done': 0, 'partial': 0, 'notdone': 0, '': 0 };
+  const byPlayer = {};
 
   DB.players.forEach(p => {
     if (!p.calendar) return;
-    if (!byPlayer[p.id]) byPlayer[p.id] = { fio: p.fio, total: 0, solo: 0, ind: 0, grp: 0, minutes: 0 };
+    if (!byPlayer[p.id]) byPlayer[p.id] = { fio: p.fio, total: 0, done: 0, partial: 0, notdone: 0, minutes: 0 };
 
     Object.keys(p.calendar).forEach(date => {
       if (date.slice(0, 7) !== month) return;
@@ -52,46 +50,47 @@ function computeCoachReportStats(month) {
       if (!Array.isArray(day)) return;
 
       day.forEach(sess => {
-        if (!sess) return;
-        const key = sess.id || (sess.groupId ? sess.groupId + '|' + (sess.timeStart || '') : ('solo_' + p.id + '_' + date + '_' + (sess.timeStart || '') + '_' + (sess.name || '')));
+        (sess.blocks || []).forEach((b, bi) => {
+          const blockKey = (sess.id || ('solo_' + p.id + '_' + date)) + '|' + bi + '|' + (b.startTime || '') + '|' + (b.complex || '');
+          const dur = Number(b.duration) || 0;
 
-        const dur = computeSessionDuration(sess);
+          byPlayer[p.id].total++;
+          byPlayer[p.id].minutes += dur;
+          if (b.fact === 'done') byPlayer[p.id].done++;
+          else if (b.fact === 'partial') byPlayer[p.id].partial++;
+          else if (b.fact === 'notdone') byPlayer[p.id].notdone++;
 
-        if (!sessions.has(key)) {
-          sessions.set(key, { date, time: sess.timeStart || '', sess, dur });
-          byDate[date] = (byDate[date] || 0) + 1;
-          const hh = (sess.timeStart || '00').slice(0, 2);
-          byHour[hh] = (byHour[hh] || 0) + 1;
-          const dow = (new Date(date + 'T00:00:00').getDay() + 6) % 7;
-          byDow[dow]++;
+          if (!uniqueBlocks.has(blockKey)) {
+            uniqueBlocks.set(blockKey, { date, block: b });
+            byDate[date] = (byDate[date] || 0) + 1;
+            const hh = (b.startTime || '00').slice(0, 2);
+            byHour[hh] = (byHour[hh] || 0) + 1;
+            const dow = (new Date(date + 'T00:00:00').getDay() + 6) % 7;
+            byDow[dow]++;
 
-          const wt = sess.workTypes || [];
-          if (!wt.length) byWorkType['—']++;
-          else wt.forEach(k => { if (byWorkType[k] !== undefined) byWorkType[k]++; });
-        }
+            const f = b.format || '—';
+            if (byFormat[f] === undefined) byFormat[f] = 0;
+            byFormat[f]++;
 
-        byPlayer[p.id].total++;
-        byPlayer[p.id].minutes += dur;
-        const wt = sess.workTypes || [];
-        if (wt.includes('Самостоятельная'))            byPlayer[p.id].solo++;
-        if (wt.includes('Индивидуальная с тренером'))  byPlayer[p.id].ind++;
-        if (wt.includes('В группе'))                   byPlayer[p.id].grp++;
+            const factKey = b.fact || '';
+            byFact[factKey] = (byFact[factKey] || 0) + 1;
+          }
+        });
       });
     });
   });
 
-  const totalSessions = sessions.size;
-  const totalPlayerSessions = Object.values(byPlayer).reduce((a, b) => a + b.total, 0);
+  const totalBlocks = uniqueBlocks.size;
+  const overall = (() => {
+    const done = byFact['done'] || 0;
+    const partial = byFact['partial'] || 0;
+    const all = totalBlocks || 1;
+    return Math.round((done + partial * 0.5) / all * 100);
+  })();
 
-  return {
-    totalSessions,
-    totalPlayerSessions,
-    byDate, byHour, byDow, byWorkType, byPlayer,
-    daysInMonth, year, monthNum
-  };
+  return { totalBlocks, byDate, byHour, byDow, byFormat, byFact, byPlayer, overall, daysInMonth, year, monthNum };
 }
 
-/* ===== Рендер экрана ===== */
 function renderCoachReport() {
   const el = document.getElementById('coach-report-content');
   if (!el) return;
@@ -114,14 +113,10 @@ function renderCoachReport() {
     </div>
     <div id="cr-body"></div>
   `;
-
   renderCoachReportBody();
 }
 
-function onCoachReportMonthChange(m) {
-  coachReportMonth = m;
-  renderCoachReportBody();
-}
+function onCoachReportMonthChange(m) { coachReportMonth = m; renderCoachReportBody(); }
 
 function renderCoachReportBody() {
   const body = document.getElementById('cr-body');
@@ -132,12 +127,12 @@ function renderCoachReportBody() {
 
   const kpiHtml = `
     <div class="dash-grid">
-      <div class="kpi"><div class="lbl">Всего тренировок</div><div class="val">${stats.totalSessions}</div><div class="sub">за ${monthLabel.toLowerCase()}</div></div>
-      <div class="kpi red"><div class="lbl">Всего посещений</div><div class="val">${stats.totalPlayerSessions}</div><div class="sub">игрок × тренировка</div></div>
-      <div class="kpi"><div class="lbl">Индивидуальных</div><div class="val">${stats.byWorkType['Индивидуальная с тренером'] || 0}</div><div class="sub">с тренером</div></div>
-      <div class="kpi red"><div class="lbl">Групповых</div><div class="val">${stats.byWorkType['В группе'] || 0}</div><div class="sub">в группе</div></div>
-      <div class="kpi"><div class="lbl">Самостоятельных</div><div class="val">${stats.byWorkType['Самостоятельная'] || 0}</div><div class="sub">без тренера</div></div>
-      <div class="kpi red"><div class="lbl">Среднее в день</div><div class="val">${(stats.totalSessions / stats.daysInMonth).toFixed(1)}</div><div class="sub">тренировок в день</div></div>
+      <div class="kpi"><div class="lbl">Всего блоков</div><div class="val">${stats.totalBlocks}</div><div class="sub">за ${monthLabel.toLowerCase()}</div></div>
+      <div class="kpi red"><div class="lbl">% выполнения</div><div class="val">${stats.overall}%</div><div class="sub">по всем блокам</div></div>
+      <div class="kpi"><div class="lbl">Выполнено</div><div class="val" style="color:#1e7a3f">${stats.byFact['done'] || 0}</div><div class="sub">блоков</div></div>
+      <div class="kpi red"><div class="lbl">Частично</div><div class="val" style="color:#b8860b">${stats.byFact['partial'] || 0}</div><div class="sub">блоков</div></div>
+      <div class="kpi"><div class="lbl">Не выполнено</div><div class="val" style="color:var(--ak-red)">${stats.byFact['notdone'] || 0}</div><div class="sub">блоков</div></div>
+      <div class="kpi red"><div class="lbl">Среднее в день</div><div class="val">${(stats.totalBlocks / stats.daysInMonth).toFixed(1)}</div><div class="sub">блоков в день</div></div>
     </div>
   `;
 
@@ -145,74 +140,41 @@ function renderCoachReportBody() {
 
   const chartsHtml = `
     <div class="cr-charts">
-      <div class="cr-chart-card">
-        <h3>Тренировки по дням месяца</h3>
-        <div class="cr-chart-box"><canvas id="cr-chart-days"></canvas></div>
-      </div>
-      <div class="cr-chart-card">
-        <h3>Распределение по формам работы</h3>
-        <div class="cr-chart-box"><canvas id="cr-chart-wt"></canvas></div>
-      </div>
-      <div class="cr-chart-card">
-        <h3>Нагрузка по дням недели</h3>
-        <div class="cr-chart-box"><canvas id="cr-chart-dow"></canvas></div>
-      </div>
-      <div class="cr-chart-card">
-        <h3>Распределение по часам суток</h3>
-        <div class="cr-chart-box"><canvas id="cr-chart-hours"></canvas></div>
-      </div>
+      <div class="cr-chart-card"><h3>Блоки по дням месяца</h3><div class="cr-chart-box"><canvas id="cr-chart-days"></canvas></div></div>
+      <div class="cr-chart-card"><h3>Форматы работы</h3><div class="cr-chart-box"><canvas id="cr-chart-wt"></canvas></div></div>
+      <div class="cr-chart-card"><h3>Нагрузка по дням недели</h3><div class="cr-chart-box"><canvas id="cr-chart-dow"></canvas></div></div>
+      <div class="cr-chart-card"><h3>Распределение по часам</h3><div class="cr-chart-box"><canvas id="cr-chart-hours"></canvas></div></div>
     </div>
   `;
 
-  const playersArr = Object.entries(stats.byPlayer)
-    .map(([id, v]) => ({ id, ...v }))
-    .sort((a, b) => b.total - a.total);
-
+  const playersArr = Object.entries(stats.byPlayer).map(([id, v]) => ({ id, ...v })).sort((a, b) => b.total - a.total);
   const playersTableHtml = playersArr.length
     ? `<div class="card" style="margin-top:20px">
         <h2>Активность по игрокам</h2>
-        <div style="overflow-x:auto">
-          <table class="cr-player-table">
-            <thead>
-              <tr>
-                <th>#</th>
-                <th>Игрок</th>
-                <th>Всего</th>
-                <th>Индивидуально</th>
-                <th>В группе</th>
-                <th>Самостоятельно</th>
-                <th>Минут</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${playersArr.map((p, i) => `
-                <tr>
-                  <td>${i + 1}</td>
-                  <td><strong>${escapeHtml(p.fio || '')}</strong></td>
-                  <td><strong>${p.total}</strong></td>
-                  <td>${p.ind}</td>
-                  <td>${p.grp}</td>
-                  <td>${p.solo}</td>
-                  <td>${p.minutes}</td>
-                </tr>
-              `).join('')}
-            </tbody>
-          </table>
-        </div>
+        <div style="overflow-x:auto"><table class="cr-player-table">
+          <thead><tr><th>#</th><th>Игрок</th><th>Всего блоков</th><th>Выполнено</th><th>Частично</th><th>Не выполнено</th><th>Минут</th></tr></thead>
+          <tbody>${playersArr.map((p, i) => `
+            <tr>
+              <td>${i + 1}</td>
+              <td><strong>${escapeHtml(p.fio || '')}</strong></td>
+              <td><strong>${p.total}</strong></td>
+              <td>${p.done}</td>
+              <td>${p.partial}</td>
+              <td>${p.notdone}</td>
+              <td>${p.minutes}</td>
+            </tr>`).join('')}
+          </tbody></table></div>
       </div>`
     : '';
 
   body.innerHTML = kpiHtml + heatHtml + chartsHtml + playersTableHtml;
-
   drawCoachCharts(stats);
 }
 
-/* ===== Тепловая карта ===== */
 function renderCoachHeatmap(stats) {
   const dayNames = ['Пн','Вт','Ср','Чт','Пт','Сб','Вс'];
   const hours = [];
   for (let h = 6; h <= 21; h++) hours.push(String(h).padStart(2, '0'));
-
   const heat = Array.from({ length: 7 }, () => ({}));
 
   DB.players.forEach(p => {
@@ -222,10 +184,10 @@ function renderCoachHeatmap(stats) {
       const day = p.calendar[date];
       if (!Array.isArray(day)) return;
       const dow = (new Date(date + 'T00:00:00').getDay() + 6) % 7;
-      day.forEach(sess => {
-        const hh = (sess.timeStart || '00').slice(0, 2);
+      day.forEach(sess => (sess.blocks || []).forEach(b => {
+        const hh = (b.startTime || '00').slice(0, 2);
         heat[dow][hh] = (heat[dow][hh] || 0) + 1;
-      });
+      }));
     });
   });
 
@@ -241,11 +203,10 @@ function renderCoachHeatmap(stats) {
     return `rgb(${r},${g},${b})`;
   };
 
-  let html = '<div class="card"><h2>Тепловая карта нагрузки</h2>';
+  let html = '<div class="card"><h2>Тепловая карта нагрузки (по блокам)</h2>';
   html += '<div class="cr-heatmap">';
   html += '<div class="cr-heat-head"></div>';
   dayNames.forEach(d => { html += `<div class="cr-heat-head">${d}</div>`; });
-
   hours.forEach(h => {
     html += `<div class="cr-heat-time">${h}:00</div>`;
     for (let d = 0; d < 7; d++) {
@@ -259,7 +220,6 @@ function renderCoachHeatmap(stats) {
   return html;
 }
 
-/* ===== Графики ===== */
 function drawCoachCharts(stats) {
   const { year, monthNum, daysInMonth } = stats;
 
@@ -270,102 +230,50 @@ function drawCoachCharts(stats) {
     labels1.push(String(d));
     data1.push(stats.byDate[ds] || 0);
   }
-
   const ctx1 = document.getElementById('cr-chart-days');
-  if (ctx1) {
-    new Chart(ctx1, {
-      type: 'bar',
-      data: { labels: labels1, datasets: [{ label: 'Тренировок', data: data1, backgroundColor: '#154734', borderColor: '#154734', borderWidth: 1 }]},
-      options: {
-        responsive: true, maintainAspectRatio: false,
-        plugins: { legend: { display: false } },
-        scales: {
-          y: { beginAtZero: true, ticks: { stepSize: 1, color: '#5a6169' }, grid: { color: '#e8eaec' } },
-          x: { ticks: { color: '#5a6169', autoSkip: true, maxRotation: 0 }, grid: { display: false } }
-        }
-      }
-    });
-  }
+  if (ctx1) new Chart(ctx1, { type: 'bar',
+    data: { labels: labels1, datasets: [{ label: 'Блоков', data: data1, backgroundColor: '#154734' }]},
+    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } },
+      scales: { y: { beginAtZero: true, ticks: { stepSize: 1, color: '#5a6169' }, grid: { color: '#e8eaec' } }, x: { ticks: { color: '#5a6169', autoSkip: true, maxRotation: 0 }, grid: { display: false } } } } });
 
-  const wtLabels = [];
-  const wtData = [];
-  Object.entries(stats.byWorkType).forEach(([k, v]) => {
-    if (v > 0 && k !== '—') { wtLabels.push(k); wtData.push(v); }
-  });
-  if (stats.byWorkType['—'] > 0) { wtLabels.push('Без формы'); wtData.push(stats.byWorkType['—']); }
-
+  const fmtLabels = [];
+  const fmtData = [];
+  Object.entries(stats.byFormat).forEach(([k, v]) => { if (v > 0) { fmtLabels.push(k); fmtData.push(v); } });
   const ctx2 = document.getElementById('cr-chart-wt');
-  if (ctx2) {
-    new Chart(ctx2, {
-      type: 'doughnut',
-      data: {
-        labels: wtLabels.length ? wtLabels : ['Нет данных'],
-        datasets: [{ data: wtData.length ? wtData : [1], backgroundColor: ['#f59e0b', '#C8102E', '#4f46e5', '#5a6169'], borderColor: '#fff', borderWidth: 2 }]
-      },
-      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { font: { size: 12 }, padding: 12 } } } }
-    });
-  }
+  if (ctx2) new Chart(ctx2, { type: 'doughnut',
+    data: { labels: fmtLabels.length ? fmtLabels : ['Нет данных'],
+      datasets: [{ data: fmtData.length ? fmtData : [1], backgroundColor: ['#f59e0b', '#C8102E', '#4f46e5', '#5a6169'], borderColor: '#fff', borderWidth: 2 }] },
+    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { font: { size: 12 }, padding: 12 } } } } });
 
   const dowLabels = ['Пн','Вт','Ср','Чт','Пт','Сб','Вс'];
   const ctx3 = document.getElementById('cr-chart-dow');
-  if (ctx3) {
-    new Chart(ctx3, {
-      type: 'bar',
-      data: { labels: dowLabels, datasets: [{ label: 'Тренировок', data: stats.byDow, backgroundColor: ['#154734','#1e5a44','#C8102E','#9a0c23','#5a6169','#f59e0b','#f59e0b'], borderColor: '#154734', borderWidth: 1 }]},
-      options: {
-        responsive: true, maintainAspectRatio: false,
-        plugins: { legend: { display: false } },
-        scales: {
-          y: { beginAtZero: true, ticks: { stepSize: 1, color: '#5a6169' }, grid: { color: '#e8eaec' } },
-          x: { ticks: { color: '#5a6169' }, grid: { display: false } }
-        }
-      }
-    });
-  }
+  if (ctx3) new Chart(ctx3, { type: 'bar',
+    data: { labels: dowLabels, datasets: [{ label: 'Блоков', data: stats.byDow, backgroundColor: ['#154734','#1e5a44','#C8102E','#9a0c23','#5a6169','#f59e0b','#f59e0b'] }] },
+    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } },
+      scales: { y: { beginAtZero: true, ticks: { stepSize: 1, color: '#5a6169' }, grid: { color: '#e8eaec' } }, x: { ticks: { color: '#5a6169' }, grid: { display: false } } } } });
 
-  const hours = [];
-  for (let h = 6; h <= 21; h++) hours.push(String(h).padStart(2, '0'));
+  const hours = []; for (let h = 6; h <= 21; h++) hours.push(String(h).padStart(2, '0'));
   const hourData = hours.map(h => stats.byHour[h] || 0);
-
   const ctx4 = document.getElementById('cr-chart-hours');
-  if (ctx4) {
-    new Chart(ctx4, {
-      type: 'bar',
-      data: { labels: hours.map(h => h + ':00'), datasets: [{ label: 'Тренировок', data: hourData, backgroundColor: '#C8102E', borderColor: '#C8102E', borderWidth: 1 }]},
-      options: {
-        responsive: true, maintainAspectRatio: false,
-        plugins: { legend: { display: false } },
-        scales: {
-          y: { beginAtZero: true, ticks: { stepSize: 1, color: '#5a6169' }, grid: { color: '#e8eaec' } },
-          x: { ticks: { color: '#5a6169', autoSkip: true, maxRotation: 45 }, grid: { display: false } }
-        }
-      }
-    });
-  }
+  if (ctx4) new Chart(ctx4, { type: 'bar',
+    data: { labels: hours.map(h => h + ':00'), datasets: [{ label: 'Блоков', data: hourData, backgroundColor: '#C8102E' }] },
+    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } },
+      scales: { y: { beginAtZero: true, ticks: { stepSize: 1, color: '#5a6169' }, grid: { color: '#e8eaec' } }, x: { ticks: { color: '#5a6169', autoSkip: true, maxRotation: 45 }, grid: { display: false } } } } });
 }
 
-/* ===== Экспорт отчёта в PDF ===== */
 async function exportCoachReportToPDF() {
   const body = document.getElementById('cr-body');
-  if (!body || !body.innerHTML.trim()) {
-    alert('Нет данных для экспорта');
-    return;
-  }
-
+  if (!body || !body.innerHTML.trim()) { alert('Нет данных для экспорта'); return; }
   await new Promise(r => setTimeout(r, 200));
-
   const stage = document.getElementById('pdf-stage');
   stage.innerHTML = `
     <div style="border-top:6px solid #C8102E;padding-top:10px;margin-bottom:14px">
       <div style="font-size:18px;font-weight:900;color:#154734;letter-spacing:1px;text-transform:uppercase">АК БАРС · Отчёт тренера</div>
       <div style="font-size:11px;color:#5a6169;margin-top:4px">Месяц: ${getMonthLabel(coachReportMonth)} · Сформировано: ${new Date().toLocaleString('ru-RU')}</div>
     </div>
-    <div id="cr-print-body"></div>
-  `;
-
+    <div id="cr-print-body"></div>`;
   const printBody = stage.querySelector('#cr-print-body');
   printBody.innerHTML = body.innerHTML;
-
   const srcCanvases = body.querySelectorAll('canvas');
   const dstCanvases = printBody.querySelectorAll('canvas');
   srcCanvases.forEach((src, i) => {
@@ -374,17 +282,11 @@ async function exportCoachReportToPDF() {
     try {
       const img = document.createElement('img');
       img.src = src.toDataURL('image/png');
-      img.style.width = '100%';
-      img.style.maxWidth = '520px';
-      img.style.display = 'block';
-      img.style.margin = '0 auto';
+      img.style.width = '100%'; img.style.maxWidth = '520px';
+      img.style.display = 'block'; img.style.margin = '0 auto';
       dst.parentElement.replaceChild(img, dst);
-    } catch (e) { /* ignore */ }
+    } catch (e) {}
   });
-
-  try {
-    await exportElementToPDF(stage, `Отчёт_тренера_${coachReportMonth}.pdf`, { orientation: 'p' });
-  } finally {
-    stage.innerHTML = '';
-  }
+  try { await exportElementToPDF(stage, `Отчёт_тренера_${coachReportMonth}.pdf`, { orientation: 'p' }); }
+  finally { stage.innerHTML = ''; }
 }
