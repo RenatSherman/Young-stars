@@ -2,6 +2,10 @@
    05-player.js
    БД, оценки, карточка игрока, техника, физ/такт/псих,
    статистика, тесты, графики, календарь игрока (месячная сетка).
+
+   Важно: в otherDetail поля называются start/plan/fact, но в UI
+   они отображаются как «Начало / Середина / Конец» — единообразно
+   с разделом «Техника» (start/mid/end). Ключи данных НЕ меняются.
    ============================================================ */
 
 function saveDB() {
@@ -234,9 +238,9 @@ function renderPlayerCard(p) {
         <div class="radar-box"><canvas id="radar2-${p.id}"></canvas></div>
         <div class="scores-legend">
           ${scoreDisplay('Техника (конец)', sEnd.tehn, 'столбец «Конец»')}
-          ${scoreDisplay('Физика (конец)', sEnd.fiz, 'столбец «Факт»')}
-          ${scoreDisplay('Тактика (конец)', sEnd.takt, 'столбец «Факт»')}
-          ${scoreDisplay('Психология (конец)', sEnd.psih, 'столбец «Факт»')}
+          ${scoreDisplay('Физика (конец)', sEnd.fiz, 'столбец «Конец»')}
+          ${scoreDisplay('Тактика (конец)', sEnd.takt, 'столбец «Конец»')}
+          ${scoreDisplay('Психология (конец)', sEnd.psih, 'столбец «Конец»')}
           <div style="margin-top:8px;padding:14px;background:var(--ak-red);color:#fff;border-radius:4px;text-align:center">
             <div style="font-size:10px;text-transform:uppercase;letter-spacing:2px;opacity:.9;font-family:var(--font-display);font-weight:900">Общая (конец)</div>
             <div style="font-size:32px;font-weight:900;font-family:var(--font-display)">${overallScoreEnd(p)}</div></div>
@@ -342,7 +346,6 @@ function drawRadarCompare(p) {
    ============================================================ */
 let playerCalMonth = null;
 
-/* Локальные копии хелперов (дублируют 06b-report.js, но изолированы) */
 function collectPlayerPlanMonthsLocal(p) {
   const set = new Set();
   if (!p || !p.calendar) return [];
@@ -376,7 +379,6 @@ function renderPlayerCalendarContent(p) {
   const months = collectPlayerPlanMonthsLocal(p);
   const hasAny = months.length > 0;
 
-  // Валидация playerCalMonth: строка YYYY-MM, иначе — текущий месяц
   if (!playerCalMonth || !/^\d{4}-\d{2}$/.test(playerCalMonth)) {
     playerCalMonth = hasAny ? months[months.length - 1] : currentMonth;
   }
@@ -562,7 +564,10 @@ function countGroup(a, g) { return a.filter(x => x.group === g).length; }
 function updateTech(pid, i, f, v) { const p = DB.players.find(x => x.id === pid); p.techDetail[i][f] = v === '' ? null : Number(v); saveDB(); refreshProfile(pid); }
 function updateTechName(pid, i, f, v) { const p = DB.players.find(x => x.id === pid); v = v.trim(); if (!v || p.techDetail[i][f] === v) return; p.techDetail[i][f] = v; saveDB(); }
 
-/* ===== ФИЗ/ТАКТ/ПСИХ ===== */
+/* ===== ФИЗ/ТАКТ/ПСИХ =====
+   В данных поля: start / plan / fact
+   В UI показываем:  Начало / Середина / Конец
+*/
 function renderOtherTable(p) {
   let rows = '', lastGroup = '', lastSub = '';
   p.otherDetail.forEach((r, i) => {
@@ -577,7 +582,7 @@ function renderOtherTable(p) {
   });
   return `<div class="card"><h2>Физические, тактические и психологические характеристики</h2>
     <p class="subtitle" style="margin-top:-8px">Названия критериев редактируются кликом</p>
-    <div style="overflow-x:auto"><table><thead><tr><th>Раздел</th><th>Подраздел</th><th>№</th><th>Критерий</th><th>Начало</th><th>План</th><th>Факт</th></tr></thead>
+    <div style="overflow-x:auto"><table><thead><tr><th>Раздел</th><th>Подраздел</th><th>№</th><th>Критерий</th><th>Начало</th><th>Середина</th><th>Конец</th></tr></thead>
     <tbody>${rows}</tbody></table></div></div>`;
 }
 function updateOther(pid, i, f, v) { const p = DB.players.find(x => x.id === pid); p.otherDetail[i][f] = v === '' ? null : Number(v); saveDB(); refreshProfile(pid); }

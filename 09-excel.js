@@ -3,6 +3,9 @@
    Excel (экспорт игрока, шаблон, импорт), JSON (экспорт/импорт),
    CSV (массовый импорт), очистка данных.
    Загружается после 08-pdf.js.
+
+   В файле лист «ФизТактПсих» имеет заголовки «Начало / Середина / Конец»,
+   но данные в объекте игрока хранятся в start/plan/fact.
    ============================================================ */
 
 /* ===== Экспорт одного игрока в Excel ===== */
@@ -53,7 +56,8 @@ function writePlayerWorkbook(p, filename) {
   ]));
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(tech), 'Техника');
 
-  const other = [['Раздел', 'Подраздел', 'Критерий', 'Начало', 'План', 'Факт']];
+  /* Физ/Такт/Псих: заголовки «Начало / Середина / Конец», данные из start/plan/fact */
+  const other = [['Раздел', 'Подраздел', 'Критерий', 'Начало', 'Середина', 'Конец']];
   (p.otherDetail || []).forEach(r => other.push([
     r.group, r.sub || '', r.name, r.start ?? '', r.plan ?? '', r.fact ?? ''
   ]));
@@ -232,7 +236,7 @@ function parseExcelWorkbook(wb) {
     }
   }
 
-  /* План развития — если в файле есть лист, импортируем «как есть» (без привязки к section/index) */
+  /* План развития */
   const devName = sheetNames.find(n => /план развития/i.test(n));
   if (devName) {
     const rows = XLSX.utils.sheet_to_json(wb.Sheets[devName], { header: 1, raw: false, defval: '' });
@@ -300,7 +304,10 @@ function parseTechSheet(rows) {
   return result;
 }
 
-/* ===== Разбор листа «Физ/Такт/Псих» ===== */
+/* ===== Разбор листа «Физ/Такт/Псих» =====
+   Читаем данные из start/plan/fact по позиции столбца — независимо от того,
+   как называются заголовки в файле («План/Факт» или «Середина/Конец»).
+*/
 function parseOtherSheet(rows) {
   const result = [];
   let lastGroup = '', lastSub = '';

@@ -11,7 +11,6 @@ async function exportElementToPDF(element, filename, options = {}) {
   const orientation = options.orientation || 'p';
   const hideSelectors = options.hideSelectors || [];
 
-  // Скрываем указанные элементы
   const hidden = [];
   hideSelectors.forEach(sel => {
     element.querySelectorAll(sel).forEach(el => {
@@ -20,7 +19,6 @@ async function exportElementToPDF(element, filename, options = {}) {
     });
   });
 
-  // Раскрываем все аккордеоны (если есть)
   const prevMaxHeight = [];
   element.querySelectorAll('.accordion-body').forEach(el => {
     prevMaxHeight.push({ el, v: el.style.maxHeight });
@@ -35,7 +33,6 @@ async function exportElementToPDF(element, filename, options = {}) {
     backgroundColor: '#ffffff'
   });
 
-  // Восстанавливаем
   hidden.forEach(({ el, display }) => { el.style.display = display; });
   prevMaxHeight.forEach(({ el, v }) => { el.style.maxHeight = v; });
 
@@ -64,7 +61,7 @@ async function exportElementToPDF(element, filename, options = {}) {
   pdf.save(filename);
 }
 
-/* ===== Замена canvas на <img> (чтобы html2canvas точно поймал картинку) ===== */
+/* ===== Замена canvas на <img> ===== */
 function snapshotCanvases(container) {
   container.querySelectorAll('canvas').forEach(canvas => {
     try {
@@ -125,7 +122,6 @@ function buildPlayerPDFHTML(p, short) {
       <div style="font-size:11px;line-height:1.5;background:#e6e8ea;padding:10px;border-radius:4px">${escapeHtml(p.characteristic)}</div>`;
   }
 
-  /* Профиль навыков — радар + легенда */
   html += `<div style="${headStyle}">Профиль навыков</div>
     <div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap">
       <div style="width:280px;height:280px;position:relative;flex-shrink:0">
@@ -143,7 +139,6 @@ function buildPlayerPDFHTML(p, short) {
       </div>
     </div>`;
 
-  /* Динамика: начало → конец */
   html += `<div style="${headStyle};background:#C8102E">Динамика: начало сезона → конец сезона</div>
     <div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap">
       <div style="width:280px;height:280px;position:relative;flex-shrink:0">
@@ -185,7 +180,7 @@ function buildPlayerPDFHTML(p, short) {
         </tbody>
       </table>`;
 
-    /* Физ / Такт / Псих */
+    /* Физ / Такт / Псих — заголовки «Начало / Середина / Конец» (данные в start/plan/fact) */
     html += `<div style="${headStyle}">Физ / Такт / Псих</div>
       <table style="width:100%;border-collapse:collapse">
         <thead><tr>
@@ -193,8 +188,8 @@ function buildPlayerPDFHTML(p, short) {
           <th style="${thStyle}">Подраздел</th>
           <th style="${thStyle}">Критерий</th>
           <th style="${thStyle}">Начало</th>
-          <th style="${thStyle}">План</th>
-          <th style="${thStyle}">Факт</th>
+          <th style="${thStyle}">Середина</th>
+          <th style="${thStyle}">Конец</th>
         </tr></thead>
         <tbody>
           ${(p.otherDetail || []).map(r => `<tr>
@@ -240,7 +235,7 @@ function buildPlayerPDFHTML(p, short) {
           </tr></thead>
           <tbody>
             ${plans.map(g => {
-              const opt = getSkillOptionByRef(p, g.section, g.index);
+              const opt = (typeof getSkillOptionByRef === 'function') ? getSkillOptionByRef(p, g.section, g.index) : null;
               const label = opt ? opt.label : (g.skillLabel || '—');
               const cur = opt ? (opt.currentStart ?? '') : '';
               const complexes = Array.isArray(g.complexes) ? g.complexes.join(', ') : '';
@@ -290,7 +285,7 @@ function buildPlayerPDFHTML(p, short) {
   return html;
 }
 
-/* ===== Рисуем радары в контейнере PDF-превью ===== */
+/* ===== Радары в PDF-превью ===== */
 function drawPDFRadars(container, p) {
   const s = getCurrentScores(p);
   const e = getEndScores(p);
