@@ -336,9 +336,28 @@ function drawRadarCompare(p) {
 
 /* ============================================================
    ВКЛАДКА «КАЛЕНДАРЬ» В КАРТОЧКЕ ИГРОКА
-   Всегда показываем месячную сетку — даже если тренировок нет.
+   Сетка месяца отображается всегда — даже если тренировок нет.
+   Используем локальные копии хелперов, чтобы не зависеть от
+   порядка загрузки скриптов (collectPlayerPlanMonths живёт в 06b-report.js).
    ============================================================ */
 let playerCalMonth = null;
+
+/* Локальные копии хелперов (дублируют 06b-report.js, но изолированы) */
+function collectPlayerPlanMonthsLocal(p) {
+  const set = new Set();
+  if (!p || !p.calendar) return [];
+  Object.keys(p.calendar).forEach(date => {
+    const day = p.calendar[date];
+    if (!Array.isArray(day) || !day.length) return;
+    set.add(date.slice(0, 7));
+  });
+  return Array.from(set).sort();
+}
+
+function monthLabelFromKeyLocal(ym) {
+  const [y, m] = ym.split('-').map(Number);
+  return `${MONTH_NAMES_RU[m - 1]} ${y}`;
+}
 
 function renderPlayerCalendarTab(p) {
   return `<div class="card">
@@ -354,19 +373,32 @@ function renderPlayerCalendarContent(p) {
 
   const today = new Date();
   const currentMonth = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
-  const months = collectPlayerPlanMonths(p);
+  const months = collectPlayerPlanMonthsLocal(p);
   const hasAny = months.length > 0;
 
-  if (!playerCalMonth || (hasAny && !months.includes(playerCalMonth))) {
+  // Валидация playerCalMonth: строка YYYY-MM, иначе — текущий месяц
+  if (!playerCalMonth || !/^\d{4}-\d{2}$/.test(playerCalMonth)) {
     playerCalMonth = hasAny ? months[months.length - 1] : currentMonth;
   }
 
   const [year, month] = playerCalMonth.split('-').map(Number);
+  if (!year || !month || month < 1 || month > 12) {
+    playerCalMonth = currentMonth;
+    const [y2, m2] = playerCalMonth.split('-').map(Number);
+    renderPlayerCalendarContentInner(el, p, months, currentMonth, y2, m2);
+    return;
+  }
 
+  renderPlayerCalendarContentInner(el, p, months, currentMonth, year, month);
+}
+
+function renderPlayerCalendarContentInner(el, p, months, currentMonth, year, month) {
   let selectMonths = months.slice();
   if (!selectMonths.includes(currentMonth)) selectMonths.push(currentMonth);
   if (!selectMonths.includes(playerCalMonth)) selectMonths.push(playerCalMonth);
   selectMonths = Array.from(new Set(selectMonths)).sort();
+
+  const hasAny = months.length > 0;
 
   el.innerHTML = `
     <div class="player-cal-toolbar">
@@ -377,7 +409,7 @@ function renderPlayerCalendarContent(p) {
       </div>
       <button class="btn btn-sm btn-ghost" onclick="playerCalGoToday('${p.id}')">Текущий месяц</button>
       <select class="player-cal-month-select" onchange="onPlayerCalMonthChange('${p.id}', this.value)">
-        ${selectMonths.map(m => `<option value="${m}" ${m === playerCalMonth ? 'selected' : ''}>${monthLabelFromKey(m)}</option>`).join('')}
+        ${selectMonths.map(m => `<option value="${m}" ${m === playerCalMonth ? 'selected' : ''}>${monthLabelFromKeyLocal(m)}</option>`).join('')}
       </select>
       <div class="cc-legend">
         <span><span class="cc-dot cc-dot-self"></span> Самостоятельная</span>
