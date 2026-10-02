@@ -14,15 +14,23 @@ function showScreen(name) {
     b.classList.toggle('active', b.dataset.screen === name);
   });
 
-  if (name === 'players')        renderPlayers();
-  if (name === 'exercises')      renderExercises();
-  if (name === 'dashboard')      renderDashboard();
-  if (name === 'report')         renderReport();
-  if (name === 'coach-calendar') renderCoachCalendar();
-  if (name === 'coach-report')   renderCoachReport();
+  // Вызываем рендер-функции с небольшой задержкой, чтобы DOM успел стать активным
+  setTimeout(() => {
+    try {
+      if (name === 'players')        renderPlayers();
+      if (name === 'exercises')      renderExercises();
+      if (name === 'dashboard')      renderDashboard();
+      if (name === 'report')         renderReport();
+      if (name === 'coach-calendar') renderCoachCalendar();
+      if (name === 'coach-report')   renderCoachReport();
+    } catch (err) {
+      console.error('showScreen error for', name, err);
+    }
+  }, 0);
 
   closeMobileNav();
-  document.getElementById('notif-panel').classList.remove('active');
+  const notifPanel = document.getElementById('notif-panel');
+  if (notifPanel) notifPanel.classList.remove('active');
   window.scrollTo(0, 0);
 }
 
@@ -208,8 +216,9 @@ function updateNotifBadge() {
 }
 
 function toggleNotif(e) {
-  e.stopPropagation();
+  if (e) e.stopPropagation();
   const panel = document.getElementById('notif-panel');
+  if (!panel) return;
   const items = collectNotifications();
   if (panel.classList.contains('active')) { panel.classList.remove('active'); return; }
 
@@ -219,7 +228,7 @@ function toggleNotif(e) {
     panel.innerHTML = `<h3 style="margin-bottom:12px">Уведомления (${items.length})</h3>` +
       items.map(i => `<div class="notif-item ${i.type}" onclick="openPlayer('${i.pid}');toggleNotif(event)">
         <div class="n-title">${i.label} · ${escapeHtml(i.ex || '')}</div>
-        <div class="n-meta">${formatDate(i.date)} ${i.time} · ${escapeHtml(i.who.split(' ')[0])}${i.note ? ' · ' + escapeHtml(i.note) : ''}</div>
+        <div class="n-meta">${formatDate(i.date)} ${i.time} · ${escapeHtml((i.who || '').split(' ')[0])}${i.note ? ' · ' + escapeHtml(i.note) : ''}</div>
       </div>`).join('');
   }
   panel.classList.add('active');
@@ -319,7 +328,7 @@ function renderDashboard() {
       ${upcoming.length ? upcoming.map(u => `<div class="upcoming" onclick="openPlayer('${u.pid}')">
         <div class="date">${formatDate(u.date)} · ${u.time}</div>
         <div class="what"><strong>${escapeHtml(u.ex || '')}</strong>${u.note ? ' · ' + escapeHtml(u.note) : ''}</div>
-        <div class="who">${escapeHtml(u.who.split(' ')[0])}</div></div>`).join('') : '<p class="subtitle">Нет запланированных тренировок.</p>'}
+        <div class="who">${escapeHtml((u.who || '').split(' ')[0])}</div></div>`).join('') : '<p class="subtitle">Нет запланированных тренировок.</p>'}
     </div>
   `;
 
@@ -333,7 +342,7 @@ function renderDashboard() {
         datasets: DB.players.map((p, i) => {
           const s = getCurrentScores(p);
           return {
-            label: p.fio.split(' ')[0],
+            label: (p.fio || '').split(' ')[0],
             data: [s.tehn, s.fiz, s.takt, s.psih],
             backgroundColor: colors[i % colors.length] + '22',
             borderColor: colors[i % colors.length],

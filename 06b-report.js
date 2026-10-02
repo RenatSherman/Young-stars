@@ -5,8 +5,13 @@
    Загружается после 06-plan.js.
    ============================================================ */
 
+/* ---------- Сбор доступных месяцев ---------- */
+
 function collectAllPlanMonths() {
   const set = new Set();
+  const today = new Date();
+  const currentMonth = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
+
   DB.players.forEach(p => {
     if (!p.calendar) return;
     Object.keys(p.calendar).forEach(date => {
@@ -14,17 +19,27 @@ function collectAllPlanMonths() {
       if (Array.isArray(day) && day.length) set.add(date.slice(0, 7));
     });
   });
+
+  // Всегда добавляем текущий месяц, даже если тренировок нет
+  set.add(currentMonth);
+
   return Array.from(set).sort();
 }
 
+/* ---------- Подсчёт по игроку за месяц ---------- */
+
 function computePlayerMonthStats(p, month) {
-  if (!p.calendar) return null;
+  if (!p || !p.calendar) {
+    return { total: 0, done: 0, partial: 0, notdone: 0, volume: 0, items: [], completion: 0 };
+  }
   let total = 0, done = 0, partial = 0, notdone = 0, volume = 0;
   const items = [];
+
   Object.keys(p.calendar).forEach(date => {
     if (date.slice(0, 7) !== month) return;
     const day = p.calendar[date];
     if (!Array.isArray(day)) return;
+
     day.forEach(sess => {
       (sess.blocks || []).forEach(b => {
         total++;
@@ -33,15 +48,19 @@ function computePlayerMonthStats(p, month) {
         else if (b.fact === 'partial') partial++;
         else if (b.fact === 'notdone') notdone++;
         items.push({
-          date, complex: b.complex || '', format: b.format || '',
-          startTime: b.startTime || '', duration: Number(b.duration) || 0,
-          fact: b.fact || '', comment: b.comment || ''
+          date,
+          complex: b.complex || '',
+          format: b.format || '',
+          startTime: b.startTime || '',
+          duration: Number(b.duration) || 0,
+          fact: b.fact || '',
+          comment: b.comment || ''
         });
       });
     });
   });
-  if (!total) return { total: 0, done: 0, partial: 0, notdone: 0, volume: 0, items, completion: 0 };
-  const completion = Math.round((done + partial * 0.5) / total * 100);
+
+  const completion = total ? Math.round((done + partial * 0.5) / total * 100) : 0;
   return { total, done, partial, notdone, volume, items, completion };
 }
 
@@ -49,38 +68,49 @@ function computeAllPlayersMonthStats(month) {
   let total = 0, done = 0, partial = 0, notdone = 0;
   DB.players.forEach(p => {
     const st = computePlayerMonthStats(p, month);
-    if (!st) return;
-    total += st.total; done += st.done; partial += st.partial; notdone += st.notdone;
+    total += st.total;
+    done += st.done;
+    partial += st.partial;
+    notdone += st.notdone;
   });
   const overall = total ? Math.round((done + partial * 0.5) / total * 100) : 0;
   return { total, done, partial, notdone, overall };
 }
 
+/* ---------- Главный рендер экрана ---------- */
+
 function renderReport() {
-  const months = collectAllPlanMonths();
   const monthSel = document.getElementById('report-month');
   const playerSel = document.getElementById('report-player-filter');
-  if (!monthSel || !playerSel) return;
+  const content = document.getElementById('report-content');
+  if (!content) return;
 
-  if (!months.length) {
-    document.getElementById('report-content').innerHTML = '<div class="empty-state"><div class="big">📄</div><p>Нет данных для отчёта.</p></div>';
-    return;
+  const months = collectAllPlanMonths();
+
+  // Селект месяца
+  if (monthSel) {
+    const prev = monthSel.value || reportMonth;
+    monthSel.innerHTML = months.map(m => `<option value="${m}">${monthLabelFromKey(m)}</option>`).join('');
+    reportMonth = (prev && months.includes(prev)) ? prev : months[months.length - 1];
+    monthSel.value = reportMonth;
+  } else {
+    // Если вдруг селекта нет — берём последний месяц
+    if (!reportMonth) reportMonth = months[months.length - 1];
   }
 
-  const prevMonth = reportMonth;
-  monthSel.innerHTML = months.map(m => `<option value="${m}">${monthLabelFromKey(m)}</option>`).join('');
-  reportMonth = (prevMonth && months.includes(prevMonth)) ? prevMonth : months[months.length - 1];
-  monthSel.value = reportMonth;
+  // Селект игрока
+  if (playerSel) {
+    const prevPlayer = playerSel.value;
+    playerSel.innerHTML = '<option value="">Все игроки</option>' +
+      DB.players.map(p => `<option value="${p.id}">${escapeHtml(p.fio)}</option>`).join('');
+    if (prevPlayer && DB.players.some(p => p.id === prevPlayer)) playerSel.value = prevPlayer;
+  }
 
-  const prevPlayer = playerSel.value;
-  playerSel.innerHTML = '<option value="">Все игроки</option>' +
-    DB.players.map(p => `<option value="${p.id}">${escapeHtml(p.fio)}</option>`).join('');
-  if (prevPlayer) playerSel.value = prevPlayer;
-
-  const filterPid = playerSel.value;
   const month = reportMonth;
+  const filterPid = playerSel ? playerSel.value : '';
   const allStats = computeAllPlayersMonthStats(month);
 
+  // KPI-сводка
   let html = `
     <div class="card">
       <h2>Сводка по месяцу «${escapeHtml(monthLabelFromKey(month))}»</h2>
@@ -93,11 +123,14 @@ function renderReport() {
       </div>
     </div>`;
 
+  // Карточки по игрокам
   const players = filterPid ? DB.players.filter(p => p.id === filterPid) : DB.players;
+  let renderedPlayers = 0;
 
   players.forEach(p => {
     const st = computePlayerMonthStats(p, month);
-    if (!st || !st.total) return;
+    if (!st || !st.total) return; // пропускаем игроков без данных в этом месяце
+    renderedPlayers++;
 
     const rows = st.items.map(it => {
       const factCls = it.fact === 'done' ? 'fact-done'
@@ -134,8 +167,22 @@ function renderReport() {
       </div>`;
   });
 
-  document.getElementById('report-content').innerHTML = html;
+  // Если ни у кого нет данных за этот месяц — показываем осмысленную заглушку
+  if (renderedPlayers === 0) {
+    html += `
+      <div class="card">
+        <div class="empty-state">
+          <div class="big">📄</div>
+          <p>За «${escapeHtml(monthLabelFromKey(month))}» тренировок нет.<br>
+          Назначьте их в «Календаре тренера» — отчёт появится автоматически.</p>
+        </div>
+      </div>`;
+  }
+
+  content.innerHTML = html;
 }
+
+/* ---------- Экспорт в PDF ---------- */
 
 async function exportReportToPDF() {
   const content = document.getElementById('report-content');
@@ -147,4 +194,11 @@ async function exportReportToPDF() {
     orientation: 'p',
     hideSelectors: ['.no-print']
   });
+}
+
+/* ---------- Хелпер: метка месяца по ключу YYYY-MM ---------- */
+
+function monthLabelFromKey(ym) {
+  const [y, m] = ym.split('-').map(Number);
+  return `${MONTH_NAMES_RU[m - 1]} ${y}`;
 }
