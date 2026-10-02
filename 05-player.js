@@ -336,6 +336,7 @@ function drawRadarCompare(p) {
 
 /* ============================================================
    ВКЛАДКА «КАЛЕНДАРЬ» В КАРТОЧКЕ ИГРОКА
+   Всегда показываем месячную сетку — даже если тренировок нет.
    ============================================================ */
 let playerCalMonth = null;
 
@@ -364,6 +365,7 @@ function renderPlayerCalendarContent(p) {
 
   let selectMonths = months.slice();
   if (!selectMonths.includes(currentMonth)) selectMonths.push(currentMonth);
+  if (!selectMonths.includes(playerCalMonth)) selectMonths.push(playerCalMonth);
   selectMonths = Array.from(new Set(selectMonths)).sort();
 
   el.innerHTML = `
