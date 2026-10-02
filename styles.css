@@ -135,7 +135,7 @@ input.cell[type=number]{text-align:center}
 .editable-name:hover{background:var(--ak-gray-light)}
 .editable-name:focus{outline:none;background:#fff;border:1px solid var(--ak-green)}
 
-/* ===== ПЛАН / ФАКТ ===== */
+/* ===== ПЛАН / ФАКТ (сводка) ===== */
 .plan-controls{display:flex;gap:16px;flex-wrap:wrap;align-items:center;margin-bottom:16px;padding:12px;background:var(--ak-gray-light);border-radius:6px;border-left:4px solid var(--ak-red)}
 .plan-controls label{font-weight:900;font-size:11px;text-transform:uppercase;letter-spacing:.8px;font-family:var(--font-display);color:var(--ak-green)}
 .plan-controls select{padding:9px 12px;border:2px solid var(--ak-gray-mid);border-radius:4px;font-size:13px;font-family:inherit;background:#fff;color:var(--ak-text);font-weight:600}
@@ -190,6 +190,112 @@ input.cell[type=number]{text-align:center}
   align-self:center;
 }
 .pbd-val{color:var(--ak-text);font-weight:500}
+
+/* ===== ПЛАН РАЗВИТИЯ ===== */
+.dev-plan-table{width:100%;border-collapse:collapse;font-size:13px}
+.dev-plan-table thead th{background:var(--ak-green);color:#fff;padding:10px 8px;text-align:left;font-weight:900;font-size:11px;text-transform:uppercase;letter-spacing:.5px;font-family:var(--font-display);white-space:nowrap}
+.dev-plan-table tbody td{padding:6px 6px;border-bottom:1px solid var(--ak-gray-mid);vertical-align:middle}
+.dev-plan-table tbody tr:hover{background:var(--ak-gray-light)}
+.dev-plan-table select.cell,
+.dev-plan-table input.cell{width:100%;border:1px solid var(--ak-gray-mid);background:#fff;padding:6px 8px;border-radius:4px;font-size:12px}
+.dev-plan-table select.cell:focus,
+.dev-plan-table input.cell:focus{outline:none;border-color:var(--ak-green);box-shadow:0 0 0 2px rgba(21,71,52,.12)}
+.dev-plan-table .dev-current{
+  text-align:center;font-weight:900;color:var(--ak-green);
+  font-family:var(--font-display);font-size:14px;background:var(--ak-gray-light);
+  border-radius:4px;padding:6px 8px;
+}
+.dev-plan-table .dev-comment.required{
+  border-color:var(--ak-red);
+  background:#fff6f8;
+}
+.dev-plan-table .dev-comment.required::placeholder{
+  color:var(--ak-red);font-weight:700;
+}
+.dev-plan-table select.pcs-fact{
+  width:100%;border:1px solid var(--ak-gray-mid);font-weight:700;
+  padding:6px 8px;border-radius:4px;background:#fff;
+}
+.dev-plan-table select.pcs-fact.done   {border-color:#1e7a3f;background:#e3f3e8;color:#1e7a3f}
+.dev-plan-table select.pcs-fact.partial{border-color:#b8860b;background:#fdf3dd;color:#b8860b}
+.dev-plan-table select.pcs-fact.notdone{border-color:var(--ak-red);background:#fce8ec;color:var(--ak-red)}
+
+/* Ячейка с комплексами */
+.dev-plan-cell{position:relative;min-width:180px}
+.dev-complexes-btn{
+  display:flex;align-items:center;justify-content:space-between;gap:8px;
+  width:100%;padding:6px 10px;border:1px solid var(--ak-gray-mid);border-radius:4px;
+  background:#fff;color:var(--ak-text);font-size:12px;font-family:inherit;
+  cursor:pointer;text-align:left;transition:.15s;min-height:32px;
+}
+.dev-complexes-btn:hover{border-color:var(--ak-green);background:var(--ak-gray-light)}
+.dev-complexes-btn .dev-complexes-text{
+  flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+.dev-complexes-btn .dev-complexes-caret{
+  color:var(--ak-gray-dark);font-size:10px;flex-shrink:0;
+}
+
+/* Поповер — fixed, вне таблицы, поверх всего (как нативный select) */
+.cc-popover{
+  display:none;
+  position:fixed;
+  z-index:9999;
+  width:340px;max-width:calc(100vw - 16px);
+  background:#fff;border:2px solid var(--ak-green);border-radius:6px;
+  box-shadow:0 12px 40px rgba(0,0,0,.28);
+  overflow:hidden;
+  flex-direction:column;
+}
+.cc-popover.cc-popover-fixed{display:flex}
+
+.cc-popover-head{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:8px 12px;background:var(--ak-green);color:#fff;
+  font-family:var(--font-display);font-weight:900;font-size:11px;
+  letter-spacing:.5px;text-transform:uppercase;
+  flex-shrink:0;
+}
+.cc-popover-count{
+  background:var(--ak-red);color:#fff;border-radius:20px;
+  font-size:10px;padding:1px 8px;min-width:22px;text-align:center;
+}
+.cc-popover-tools{
+  display:flex;gap:6px;padding:8px;background:var(--ak-gray-light);
+  border-bottom:1px solid var(--ak-gray-mid);
+  flex-shrink:0;
+}
+.cc-popover-search{
+  flex:1;padding:6px 8px;border:1px solid var(--ak-gray-mid);border-radius:4px;
+  font-size:12px;font-family:inherit;
+}
+.cc-popover-search:focus{outline:none;border-color:var(--ak-green)}
+.cc-popover-tools button{
+  padding:6px 10px;border:1px solid var(--ak-gray-mid);background:#fff;border-radius:4px;
+  font-size:10px;font-family:var(--font-display);font-weight:900;
+  color:var(--ak-gray-dark);letter-spacing:.3px;text-transform:uppercase;
+  cursor:pointer;transition:.15s;white-space:nowrap;
+}
+.cc-popover-tools button:hover{border-color:var(--ak-green);color:var(--ak-green)}
+.cc-popover-body{
+  max-height:260px;overflow-y:auto;padding:6px;
+  flex:1;
+}
+.cc-popover-body label{
+  display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:4px;
+  cursor:pointer;font-size:13px;transition:.1s;
+}
+.cc-popover-body label:hover{background:var(--ak-gray-light)}
+.cc-popover-body input[type=checkbox]{margin:0;cursor:pointer}
+.cc-popover-empty{
+  padding:20px;text-align:center;color:var(--ak-gray-dark);font-size:12px;
+}
+.cc-popover-foot{
+  padding:8px 12px;background:var(--ak-gray-light);
+  border-top:1px solid var(--ak-gray-mid);
+  display:flex;justify-content:flex-end;
+  flex-shrink:0;
+}
 
 /* ===== ЧИПЫ ===== */
 .wt-chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:4px}
@@ -413,7 +519,7 @@ input.cell[type=number]{text-align:center}
 .player-cal-month-select{padding:9px 12px;border:2px solid var(--ak-gray-mid);border-radius:4px;font-size:13px;font-family:inherit;background:#fff;font-weight:600;margin-left:auto}
 .player-cal-month-select:focus{outline:none;border-color:var(--ak-green)}
 
-/* Легенда внутри тулбара игрока (календарь и план/факт) */
+/* Легенда внутри тулбара игрока (календарь) */
 .player-cal-toolbar .cc-legend{
   margin-left:0;
   width:100%;
@@ -487,7 +593,6 @@ input.cell[type=number]{text-align:center}
   .cc-time-row{grid-template-columns:1fr}
   .pbd-row{grid-template-columns:1fr;gap:4px}
 
-  /* В мобильном легенда тоже показывается, но в 2 строки */
   .player-cal-toolbar .cc-legend{
     display:flex;
     font-size:10px;

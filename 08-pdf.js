@@ -223,6 +223,40 @@ function buildPlayerPDFHTML(p, short) {
           </tr>`).join('')}
         </tbody>
       </table>`;
+
+    /* План развития */
+    const plans = (p.developmentPlans || []);
+    if (plans.length) {
+      html += `<div style="${headStyle}">План развития</div>
+        <table style="width:100%;border-collapse:collapse">
+          <thead><tr>
+            <th style="${thStyle}">Навык</th>
+            <th style="${thStyle}">Текущая</th>
+            <th style="${thStyle}">Цель</th>
+            <th style="${thStyle}">Срок</th>
+            <th style="${thStyle}">Комплекс(ы)</th>
+            <th style="${thStyle}">Факт</th>
+            <th style="${thStyle}">Комментарий</th>
+          </tr></thead>
+          <tbody>
+            ${plans.map(g => {
+              const opt = getSkillOptionByRef(p, g.section, g.index);
+              const label = opt ? opt.label : (g.skillLabel || '—');
+              const cur = opt ? (opt.currentStart ?? '') : '';
+              const complexes = Array.isArray(g.complexes) ? g.complexes.join(', ') : '';
+              return `<tr>
+                <td style="${tdStyle}">${escapeHtml(label)}</td>
+                <td style="${tdStyle}">${cur}</td>
+                <td style="${tdStyle}">${g.target ?? ''}</td>
+                <td style="${tdStyle}">${escapeHtml(g.deadline || '')}</td>
+                <td style="${tdStyle}">${escapeHtml(complexes)}</td>
+                <td style="${tdStyle}">${factLabel(g.fact)}</td>
+                <td style="${tdStyle}">${escapeHtml(g.comment || '')}</td>
+              </tr>`;
+            }).join('')}
+          </tbody>
+        </table>`;
+    }
   }
 
   /* Статистика — всегда */

@@ -68,7 +68,10 @@ async function pullFromCloud() {
     if (data) {
       DB.players = data.players || [];
       DB.exercises = data.exercises || [];
-      DB.players.forEach(p => migrateCalendar(p));
+      DB.players.forEach(p => {
+        migrateCalendar(p);
+        if (!Array.isArray(p.developmentPlans)) p.developmentPlans = [];
+      });
       localStorage.setItem(STORAGE_KEY, JSON.stringify(DB));
       setSyncStatus('ok', 'Загружено');
       return true;

@@ -15,7 +15,10 @@ function loadDB() {
   if (!DB.players)   DB.players = [];
   if (!DB.exercises) DB.exercises = [];
   if (!DB.meta)      DB.meta = {};
-  DB.players.forEach(p => migrateCalendar(p));
+  DB.players.forEach(p => {
+    migrateCalendar(p);
+    if (!Array.isArray(p.developmentPlans)) p.developmentPlans = [];
+  });
 }
 
 function seedDemoData() {
@@ -84,7 +87,8 @@ function saveNewPlayer() {
     grip: 'Правый', photo: '', characteristic: '',
     techDetail: defaultTechDetail(),
     otherDetail: defaultOtherDetail(),
-    plans: {}, calendar: {}, stats: [], tests: []
+    plans: {}, calendar: {}, stats: [], tests: [],
+    developmentPlans: []
   });
   saveDB(); closeModal(); renderPlayers();
   toast(`Игрок «${fio}» добавлен`);
@@ -100,7 +104,8 @@ function confirmDeletePlayer(pid) {
     : 0;
   const statsCount = (p.stats || []).filter(s => s.club || s.season).length;
   const testsCount = (p.tests || []).filter(t => t.date).length;
-  const hasData = scoresCount + calCount + statsCount + testsCount > 0;
+  const devCount = (p.developmentPlans || []).length;
+  const hasData = scoresCount + calCount + statsCount + testsCount + devCount > 0;
   const lastName = (p.fio || '').trim().split(/\s+/)[0] || '';
   const needConfirm = hasData && lastName;
 
@@ -117,6 +122,7 @@ function confirmDeletePlayer(pid) {
           ${calCount ? `<li>${calCount} ${plural(calCount, 'блок', 'блока', 'блоков')} в календаре</li>` : ''}
           ${statsCount ? `<li>${statsCount} ${plural(statsCount, 'строка', 'строки', 'строк')} статистики</li>` : ''}
           ${testsCount ? `<li>${testsCount} ${plural(testsCount, 'тест', 'теста', 'тестов')}</li>` : ''}
+          ${devCount ? `<li>${devCount} ${plural(devCount, 'цель', 'цели', 'целей')} развития</li>` : ''}
         </ul>
         <p><strong>Действие необратимо.</strong> Рекомендуем сначала экспортировать данные игрока в PDF.</p>
       ` : '<p>У игрока пока нет данных. Удаление безопасно.</p>'}
@@ -241,7 +247,7 @@ function renderPlayerCard(p) {
     <div class="tabs no-print">
       <button data-tab="tech" class="${currentTab === 'tech' ? 'active' : ''}">Техника</button>
       <button data-tab="other" class="${currentTab === 'other' ? 'active' : ''}">Физ / Такт / Псих</button>
-      <button data-tab="plan" class="${currentTab === 'plan' ? 'active' : ''}">План / факт</button>
+      <button data-tab="development" class="${currentTab === 'development' ? 'active' : ''}">План развития</button>
       <button data-tab="calendar" class="${currentTab === 'calendar' ? 'active' : ''}">Календарь</button>
       <button data-tab="stats" class="${currentTab === 'stats' ? 'active' : ''}">Статистика</button>
       <button data-tab="tests" class="${currentTab === 'tests' ? 'active' : ''}">Тесты</button>
@@ -250,7 +256,7 @@ function renderPlayerCard(p) {
 
     <div id="tab-tech" class="tab-content ${currentTab === 'tech' ? 'active' : ''}">${renderTechTable(p)}</div>
     <div id="tab-other" class="tab-content ${currentTab === 'other' ? 'active' : ''}">${renderOtherTable(p)}</div>
-    <div id="tab-plan" class="tab-content ${currentTab === 'plan' ? 'active' : ''}">${renderPlan(p)}</div>
+    <div id="tab-development" class="tab-content ${currentTab === 'development' ? 'active' : ''}">${renderDevelopmentPlan(p)}</div>
     <div id="tab-calendar" class="tab-content ${currentTab === 'calendar' ? 'active' : ''}">${renderPlayerCalendarTab(p)}</div>
     <div id="tab-stats" class="tab-content ${currentTab === 'stats' ? 'active' : ''}">${renderStats(p)}</div>
     <div id="tab-tests" class="tab-content ${currentTab === 'tests' ? 'active' : ''}">${renderTests(p)}</div>
@@ -264,17 +270,17 @@ function renderPlayerCard(p) {
       el.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
       btn.classList.add('active');
       document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
-      if (btn.dataset.tab === 'charts')   drawTestCharts(p);
-      if (btn.dataset.tab === 'calendar') renderPlayerCalendarContent(p);
-      if (btn.dataset.tab === 'plan')     renderPlanContent(p);
+      if (btn.dataset.tab === 'charts')      drawTestCharts(p);
+      if (btn.dataset.tab === 'calendar')    renderPlayerCalendarContent(p);
+      if (btn.dataset.tab === 'development') renderDevelopmentPlanContent(p);
     });
   });
 
   drawRadar(p);
   drawRadarCompare(p);
-  if (currentTab === 'charts')   drawTestCharts(p);
-  if (currentTab === 'calendar') renderPlayerCalendarContent(p);
-  if (currentTab === 'plan')     renderPlanContent(p);
+  if (currentTab === 'charts')      drawTestCharts(p);
+  if (currentTab === 'calendar')    renderPlayerCalendarContent(p);
+  if (currentTab === 'development') renderDevelopmentPlanContent(p);
 }
 
 function updateField(playerId, field, val) {

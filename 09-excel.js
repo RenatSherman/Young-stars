@@ -20,7 +20,7 @@ function downloadTemplateExcel() {
     position: 'Нападающий', grip: 'Правый', characteristic: '',
     techDetail: defaultTechDetail().map(t => ({ ...t, start: '', mid: '', end: '' })),
     otherDetail: defaultOtherDetail().map(t => ({ ...t, start: '', plan: '', fact: '' })),
-    stats: [], tests: []
+    stats: [], tests: [], developmentPlans: []
   };
   writePlayerWorkbook(template, 'Шаблон_игрока.xlsx');
 }
@@ -71,6 +71,19 @@ function writePlayerWorkbook(p, filename) {
   });
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(stats), 'Статистика');
 
+  const dev = [['Навык', 'Текущая', 'Цель', 'Срок', 'Комплекс(ы)', 'Факт', 'Комментарий']];
+  (p.developmentPlans || []).forEach(g => {
+    const opt = (typeof getSkillOptionByRef === 'function') ? getSkillOptionByRef(p, g.section, g.index) : null;
+    const label = opt ? opt.label : (g.skillLabel || '');
+    const cur = opt ? (opt.currentStart ?? '') : '';
+    dev.push([
+      label, cur, g.target ?? '', g.deadline || '',
+      Array.isArray(g.complexes) ? g.complexes.join(', ') : '',
+      factLabel(g.fact), g.comment || ''
+    ]);
+  });
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(dev), 'План развития');
+
   XLSX.writeFile(wb, filename);
 }
 
@@ -100,7 +113,8 @@ function importPlayerFromExcel() {
           `Игрок «${parsed.fio}» добавлен.`,
           `Технических критериев: ${parsed.techDetail.length}`,
           `Физ/Такт/Псих критериев: ${parsed.otherDetail.length}`,
-          `Тестов: ${parsed.tests.length}, статистики: ${parsed.stats.length}`
+          `Тестов: ${parsed.tests.length}, статистики: ${parsed.stats.length}`,
+          `Целей развития: ${(parsed.developmentPlans || []).length}`
         ].join('\n');
         alert(report);
 
@@ -125,7 +139,8 @@ function parseExcelWorkbook(wb) {
     height: '', weight: '', team: '', city: '', firstSchool: '',
     position: 'Нападающий', grip: 'Правый', photo: '', characteristic: '',
     techDetail: [], otherDetail: [],
-    plans: {}, calendar: {}, stats: [], tests: []
+    plans: {}, calendar: {}, stats: [], tests: [],
+    developmentPlans: []
   };
 
   const sheetNames = wb.SheetNames;
@@ -214,6 +229,27 @@ function parseExcelWorkbook(wb) {
           plus: r[5] != null && r[5] !== '' ? Number(r[5]) : ''
         });
       }
+    }
+  }
+
+  /* План развития — если в файле есть лист, импортируем «как есть» (без привязки к section/index) */
+  const devName = sheetNames.find(n => /план развития/i.test(n));
+  if (devName) {
+    const rows = XLSX.utils.sheet_to_json(wb.Sheets[devName], { header: 1, raw: false, defval: '' });
+    for (let i = 1; i < rows.length; i++) {
+      const r = rows[i];
+      if (!r[0]) continue;
+      player.developmentPlans.push({
+        id: 'dp_' + Date.now() + '_' + i,
+        section: '',
+        index: -1,
+        skillLabel: String(r[0] || ''),
+        target: r[2] != null && r[2] !== '' ? Number(r[2]) : '',
+        deadline: r[3] ? String(r[3]).trim() : '',
+        complexes: r[4] ? String(r[4]).split(',').map(s => s.trim()).filter(Boolean) : [],
+        fact: '',
+        comment: r[6] ? String(r[6]) : ''
+      });
     }
   }
 
@@ -334,7 +370,10 @@ function importData() {
       DB = data;
       if (!DB.exercises) DB.exercises = [];
       if (!DB.meta)      DB.meta = {};
-      DB.players.forEach(p => migrateCalendar(p));
+      DB.players.forEach(p => {
+        migrateCalendar(p);
+        if (!Array.isArray(p.developmentPlans)) p.developmentPlans = [];
+      });
 
       saveDB();
       pushToCloud();
@@ -380,7 +419,8 @@ function importCSVFile() {
           birthDay: '', birthMonth: '', firstSchool: '', photo: '', characteristic: '',
           techDetail: defaultTechDetail(),
           otherDetail: defaultOtherDetail(),
-          plans: {}, calendar: {}, stats: [], tests: []
+          plans: {}, calendar: {}, stats: [], tests: [],
+          developmentPlans: []
         });
         added++;
       }
