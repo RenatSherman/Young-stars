@@ -1,0 +1,365 @@
+/* ============================================================
+   styles-04-modal.css
+   Модалки и авторизация:
+   - общий контейнер модалки (.modal-bg, .modal)
+   - групповой выбор игроков (.group-list, .group-team, .group-tools)
+   - экран входа/регистрации (#auth-screen, .auth-*)
+   - служебные keyframes (spin)
+
+   Разбиение styles.css:
+     styles-01-base.css      — токены, шапка, кнопки (создан)
+     styles-02-players.css   — игроки, паспорт, дашборд (создан)
+     styles-03-calendar.css  — календари, план развития (создан)
+     styles-04-modal.css     ← этот файл
+     styles-05-reports.css   — отчёт тренера, адаптив, печать
+   ============================================================ */
+
+/* ===== МОДАЛЬНОЕ ОКНО ===== */
+.modal-bg{
+  display:none;
+  position:fixed;
+  inset:0;
+  background:rgba(14,47,34,.6);
+  z-index:1000;
+  align-items:center;
+  justify-content:center;
+  padding:20px;
+}
+.modal-bg.active{display:flex}
+
+.modal{
+  background:#fff;
+  border-radius:8px;
+  padding:24px;
+  max-width:720px;
+  width:100%;
+  max-height:88vh;
+  overflow:auto;
+  box-shadow:var(--shadow-lg);
+  border-top:5px solid var(--ak-red);
+}
+
+.modal h3{
+  margin-bottom:16px;
+  font-family:var(--font-display);
+  text-transform:uppercase;
+  letter-spacing:.5px;
+  color:var(--ak-green);
+}
+.modal .field{margin-bottom:12px}
+
+.modal input,
+.modal textarea,
+.modal select{
+  width:100%;
+  padding:9px 12px;
+  border:2px solid var(--ak-gray-mid);
+  border-radius:4px;
+  font-size:13px;
+  font-family:inherit;
+}
+.modal input:focus,
+.modal textarea:focus,
+.modal select:focus{
+  outline:none;
+  border-color:var(--ak-green);
+}
+
+/* ===== ГРУППОВОЙ СПИСОК ИГРОКОВ (в редакторе тренировки) ===== */
+.group-list{
+  max-height:280px;
+  overflow:auto;
+  border:2px solid var(--ak-gray-mid);
+  border-radius:4px;
+  padding:8px;
+  background:var(--ak-gray-light);
+}
+.group-list label{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  padding:6px 8px;
+  border-radius:3px;
+  cursor:pointer;
+  font-size:13px;
+}
+.group-list label:hover{background:#fff}
+.group-list input[type=checkbox]{width:auto;margin:0}
+
+.group-tools{
+  display:flex;
+  gap:8px;
+  margin-bottom:8px;
+  flex-wrap:wrap;
+  align-items:center;
+}
+.group-tools input[type=text]{
+  flex:1;
+  min-width:140px;
+  padding:6px 10px;
+  border:2px solid var(--ak-gray-mid);
+  border-radius:4px;
+  font-size:12px;
+  font-family:inherit;
+  background:#fff;
+}
+.group-tools input[type=text]:focus{
+  outline:none;
+  border-color:var(--ak-green);
+}
+.group-tools button{
+  padding:6px 10px;
+  border:2px solid var(--ak-gray-mid);
+  background:#fff;
+  border-radius:4px;
+  cursor:pointer;
+  font-size:10px;
+  font-weight:900;
+  font-family:var(--font-display);
+  color:var(--ak-gray-dark);
+  letter-spacing:.3px;
+  text-transform:uppercase;
+  transition:.15s;
+}
+.group-tools button:hover{
+  border-color:var(--ak-green);
+  color:var(--ak-green);
+}
+
+.group-team{
+  margin-bottom:6px;
+  border-radius:4px;
+  overflow:hidden;
+  background:#fff;
+  border-left:3px solid var(--ak-green);
+}
+.group-team-head{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  padding:6px 10px;
+  cursor:pointer;
+  background:var(--ak-gray-light);
+  font-size:11px;
+  font-weight:900;
+  font-family:var(--font-display);
+  letter-spacing:.3px;
+  text-transform:uppercase;
+  color:var(--ak-green);
+  user-select:none;
+}
+.group-team-head:hover{background:var(--ak-gray-mid)}
+.group-team-head .arrow{
+  font-size:10px;
+  color:var(--ak-red);
+  transition:transform .2s;
+  display:inline-block;
+}
+.group-team.open .group-team-head .arrow{transform:rotate(90deg)}
+.group-team-head .count{
+  font-size:10px;
+  font-weight:900;
+  padding:1px 8px;
+  border-radius:20px;
+  background:var(--ak-green);
+  color:#fff;
+  margin-left:auto;
+}
+.group-team-head .team-actions{display:flex;gap:4px;margin-left:6px}
+.group-team-head .team-actions button{
+  padding:2px 6px;
+  font-size:9px;
+  border-radius:3px;
+  border:1px solid var(--ak-gray-mid);
+  background:#fff;
+  color:var(--ak-gray-dark);
+  cursor:pointer;
+  font-family:var(--font-display);
+  font-weight:900;
+  letter-spacing:.3px;
+}
+.group-team-head .team-actions button:hover{
+  background:var(--ak-green);
+  color:#fff;
+  border-color:var(--ak-green);
+}
+.group-team-body{
+  display:none;
+  padding:4px 8px 6px 8px;
+}
+.group-team.open .group-team-body{display:block}
+.group-team-body label{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  padding:5px 6px;
+  border-radius:3px;
+  cursor:pointer;
+  font-size:13px;
+}
+.group-team-body label:hover{background:var(--ak-gray-light)}
+.group-team-body input[type=checkbox]{width:auto;margin:0}
+
+/* ===== ЭКРАН АВТОРИЗАЦИИ ===== */
+#auth-screen{
+  display:none;
+  position:fixed;
+  inset:0;
+  z-index:5000;
+  background:linear-gradient(135deg,var(--ak-green) 0%,var(--ak-green-dark) 100%);
+  align-items:center;
+  justify-content:center;
+  padding:20px;
+  overflow:auto;
+}
+#auth-screen.active{display:flex}
+#auth-screen::before{
+  content:'';
+  position:absolute;
+  inset:0;
+  background-image:
+    repeating-linear-gradient(90deg,transparent 0 40px,rgba(200,16,46,.08) 40px 42px),
+    repeating-linear-gradient(0deg,transparent 0 40px,rgba(200,16,46,.05) 40px 42px);
+  pointer-events:none;
+}
+
+.auth-card{
+  background:#fff;
+  border-radius:10px;
+  padding:40px 36px;
+  max-width:420px;
+  width:100%;
+  box-shadow:0 24px 64px rgba(0,0,0,.4);
+  position:relative;
+  border-top:6px solid var(--ak-red);
+  z-index:1;
+}
+
+.auth-logo{
+  display:flex;
+  align-items:center;
+  gap:14px;
+  justify-content:center;
+  margin-bottom:28px;
+  flex-direction:column;
+  text-align:center;
+}
+.auth-logo .text{
+  font-size:22px;
+  font-weight:900;
+  color:var(--ak-green);
+  line-height:1.2;
+  font-family:var(--font-display);
+  letter-spacing:1px;
+  text-transform:uppercase;
+}
+.auth-logo .text small{
+  display:block;
+  font-size:11px;
+  font-weight:400;
+  color:var(--ak-gray-dark);
+  letter-spacing:3px;
+  text-transform:uppercase;
+  margin-top:4px;
+  font-family:var(--font-body);
+}
+
+.auth-tabs{
+  display:flex;
+  gap:0;
+  border-bottom:3px solid var(--ak-green);
+  margin-bottom:24px;
+}
+.auth-tabs button{
+  flex:1;
+  background:transparent;
+  border:none;
+  padding:12px;
+  cursor:pointer;
+  font-size:13px;
+  font-weight:900;
+  color:var(--ak-gray-dark);
+  border-bottom:3px solid transparent;
+  margin-bottom:-3px;
+  font-family:var(--font-display);
+  letter-spacing:.5px;
+  text-transform:uppercase;
+  transition:.15s;
+}
+.auth-tabs button.active{
+  color:#fff;
+  background:var(--ak-red);
+  border-bottom-color:var(--ak-red);
+}
+
+.auth-field{margin-bottom:16px}
+.auth-field label{
+  display:block;
+  font-size:11px;
+  font-weight:900;
+  color:var(--ak-gray-dark);
+  margin-bottom:6px;
+  text-transform:uppercase;
+  letter-spacing:.8px;
+  font-family:var(--font-display);
+}
+.auth-field input{
+  width:100%;
+  padding:12px 14px;
+  border:2px solid var(--ak-gray-mid);
+  border-radius:4px;
+  font-size:14px;
+  font-family:inherit;
+  transition:.15s;
+}
+.auth-field input:focus{
+  outline:none;
+  border-color:var(--ak-green);
+  box-shadow:0 0 0 3px rgba(21,71,52,.1);
+}
+
+.auth-error{
+  background:#fce8ec;
+  color:var(--ak-red-dark);
+  padding:10px 14px;
+  border-radius:4px;
+  font-size:13px;
+  margin-bottom:16px;
+  display:none;
+  border-left:4px solid var(--ak-red);
+}
+.auth-error.active{display:block}
+
+.auth-info{
+  background:#e8f0ec;
+  color:var(--ak-green);
+  padding:10px 14px;
+  border-radius:4px;
+  font-size:13px;
+  margin-bottom:16px;
+  display:none;
+  border-left:4px solid var(--ak-green);
+}
+.auth-info.active{display:block}
+
+.auth-loading{
+  display:none;
+  text-align:center;
+  padding:20px;
+  color:var(--ak-gray-dark);
+  font-size:13px;
+}
+.auth-loading.active{display:block}
+.auth-loading .spinner{
+  width:32px;
+  height:32px;
+  border:3px solid var(--ak-gray-mid);
+  border-top-color:var(--ak-red);
+  border-radius:50%;
+  animation:spin 1s linear infinite;
+  margin:0 auto 10px;
+}
+
+@keyframes spin{
+  to{transform:rotate(360deg)}
+}

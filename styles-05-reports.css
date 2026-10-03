@@ -1,0 +1,272 @@
+/* ============================================================
+   styles-05-reports.css
+   Отчёт тренера, адаптив, печать:
+   - панель отчёта тренера (.cr-toolbar)
+   - тепловая карта (.cr-heatmap)
+   - графики отчёта (.cr-charts, .cr-chart-card, .cr-chart-box)
+   - таблица активности игроков (.cr-player-table)
+   - @media (max-width: 1100/900/700/560)
+   - @media print
+
+   Разбиение styles.css:
+     styles-01-base.css      — токены, шапка, кнопки (создан)
+     styles-02-players.css   — игроки, паспорт, дашборд (создан)
+     styles-03-calendar.css  — календари, план развития (создан)
+     styles-04-modal.css     — модалки, авторизация (создан)
+     styles-05-reports.css   ← этот файл
+   ============================================================ */
+
+/* ===== ОТЧЁТ ТРЕНЕРА ===== */
+.cr-toolbar{
+  display:flex;
+  gap:12px;
+  flex-wrap:wrap;
+  align-items:center;
+  margin-bottom:16px;
+  padding:12px;
+  background:var(--ak-gray-light);
+  border-radius:6px;
+  border-left:4px solid var(--ak-red);
+}
+.cr-toolbar label{
+  font-weight:900;
+  font-size:11px;
+  text-transform:uppercase;
+  letter-spacing:.8px;
+  font-family:var(--font-display);
+  color:var(--ak-green);
+}
+.cr-toolbar select{
+  padding:9px 12px;
+  border:2px solid var(--ak-gray-mid);
+  border-radius:4px;
+  font-size:13px;
+  font-family:inherit;
+  background:#fff;
+  font-weight:600;
+}
+.cr-toolbar select:focus{outline:none;border-color:var(--ak-green)}
+
+/* Тепловая карта */
+.cr-heatmap{
+  display:grid;
+  grid-template-columns:64px repeat(7,1fr);
+  gap:2px;
+  font-size:11px;
+  margin-bottom:8px;
+}
+.cr-heat-head{
+  background:#000;
+  color:#fff;
+  padding:8px 4px;
+  text-align:center;
+  font-family:var(--font-display);
+  font-weight:900;
+  font-size:10px;
+  letter-spacing:.5px;
+  text-transform:uppercase;
+  border-radius:3px;
+}
+.cr-heat-time{
+  background:#f7f8f9;
+  padding:8px 4px;
+  text-align:center;
+  font-weight:900;
+  color:var(--ak-gray-dark);
+  font-size:10px;
+  border-radius:3px;
+}
+.cr-heat-cell{
+  height:24px;
+  border-radius:3px;
+  background:#e6e8ea;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  font-size:9px;
+  color:#fff;
+  font-weight:900;
+}
+.cr-heat-cell:hover{outline:2px solid var(--ak-green)}
+
+/* Графики отчёта */
+.cr-charts{
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(340px,1fr));
+  gap:20px;
+  margin-top:16px;
+}
+.cr-chart-card{
+  background:#fff;
+  border-radius:6px;
+  padding:14px 16px;
+  box-shadow:var(--shadow);
+  border-left:5px solid var(--ak-green);
+}
+.cr-chart-card h3{font-size:12px;margin-bottom:8px}
+.cr-chart-box{position:relative;height:240px}
+
+/* Таблица активности игроков */
+.cr-player-table{font-size:12px}
+.cr-player-table th{font-size:10px;padding:6px 8px}
+.cr-player-table td{padding:6px 8px}
+
+/* ============================================================
+   АДАПТИВ
+   ============================================================ */
+
+@media (max-width: 1100px){
+  nav button{font-size:10px;padding:9px 10px}
+  .sync-status{display:none}
+}
+
+@media (max-width: 900px){
+  header{padding:0 12px;gap:8px}
+  .burger{display:inline-flex}
+  .logo{font-size:15px}
+  .logo small{display:none}
+
+  nav{
+    position:fixed;
+    top:64px;
+    left:0;
+    right:0;
+    background:var(--ak-green);
+    flex-direction:column;
+    align-items:stretch;
+    padding:8px;
+    gap:2px;
+    max-height:calc(100vh - 64px);
+    overflow-y:auto;
+    transform:translateY(-8px);
+    opacity:0;
+    pointer-events:none;
+    transition:transform .2s,opacity .2s;
+    z-index:99;
+    border-bottom:4px solid var(--ak-red);
+    box-shadow:var(--shadow-lg);
+  }
+  nav.open{
+    transform:translateY(0);
+    opacity:1;
+    pointer-events:auto;
+  }
+  nav button{
+    padding:12px 16px;
+    font-size:13px;
+    text-align:left;
+    width:100%;
+    border-radius:4px;
+  }
+  nav button.active{background:var(--ak-red)}
+  .notif-btn{margin:6px 0 0 0;justify-content:center;text-align:center!important}
+  .user-pill{
+    margin:6px 0 0 0;
+    justify-content:space-between;
+    padding:8px 12px;
+    border-radius:8px;
+    width:100%;
+  }
+  .user-pill .email{display:inline;max-width:none}
+  .sync-status{display:inline-flex;margin:6px 0 0 0;justify-content:center}
+
+  main{padding:14px}
+  .passport,
+  .radar-wrap{grid-template-columns:1fr}
+  .passport-fields{grid-template-columns:1fr}
+  h1{font-size:20px}
+  .notif-panel{width:calc(100% - 32px);right:16px;top:72px}
+  .cc-legend{display:none}
+  .cc-month-wrap{min-width:560px}
+  .cc-day{min-height:80px;padding:4px}
+  .cc-day-bar{font-size:9px;padding:2px 4px}
+  .cc-month-title{min-width:120px;font-size:14px}
+  .cc-sess-item{padding:8px 10px}
+  .plan-summary{grid-template-columns:1fr 1fr}
+  .player-cal-month-select{margin-left:0;width:100%}
+  .cc-time-row{grid-template-columns:1fr}
+  .pbd-row{grid-template-columns:1fr;gap:4px}
+
+  /* Легенда внутри тулбара игрока остаётся видимой */
+  .player-cal-toolbar .cc-legend{
+    display:flex;
+    font-size:10px;
+    gap:8px;
+  }
+
+  /* Модалка отметки факта (тренер) — компактнее на мобильном */
+  .fm-player-block{grid-template-columns:1fr}
+  .fm-player-block-name{margin-bottom:4px}
+  .fm-toolbar{gap:6px}
+  .fm-toolbar .btn{padding:6px 10px;font-size:10px}
+  .cc-sess-actions{flex-direction:column}
+}
+
+@media (max-width: 560px){
+  .cc-month-card{padding:6px}
+  .cc-month-wrap{min-width:480px}
+  .cc-day{min-height:64px;padding:3px}
+  .cc-day-num{font-size:12px}
+  .cc-day-bar{font-size:8px;padding:1px 3px}
+  .cc-bar-time{display:none}
+  .cc-day-total{font-size:8px;padding:0 5px}
+  .modal{padding:16px;border-radius:6px}
+  .plan-summary{grid-template-columns:1fr}
+}
+
+/* ============================================================
+   ПЕЧАТЬ
+   ============================================================ */
+@media print{
+  header,
+  nav,
+  .btn,
+  .btn-row,
+  .tabs,
+  .no-print,
+  .notif-panel,
+  .btn-icon,
+  .item-actions,
+  .group-actions,
+  .arrow,
+  .cal-controls,
+  .tile-delete,
+  .sync-panel,
+  .user-pill,
+  .sync-status,
+  .group-tools,
+  .group-team-head .team-actions,
+  .cc-legend,
+  .burger{display:none!important}
+
+  body{background:#fff;font-size:11px}
+  main{max-width:100%;padding:0}
+  .card{
+    box-shadow:none;
+    border:1px solid #ccc;
+    page-break-inside:avoid;
+    margin-bottom:12px;
+  }
+  .tab-content{display:block!important}
+  .radar-box{height:260px}
+
+  thead th{
+    background:#154734!important;
+    color:#fff!important;
+    -webkit-print-color-adjust:exact;
+    print-color-adjust:exact;
+  }
+  .section-row{
+    background:#154734!important;
+    color:#fff!important;
+    -webkit-print-color-adjust:exact;
+    print-color-adjust:exact;
+  }
+  .accordion-body{max-height:none!important}
+  .accordion-header{
+    background:#154734!important;
+    color:#fff!important;
+    -webkit-print-color-adjust:exact;
+    print-color-adjust:exact;
+  }
+}

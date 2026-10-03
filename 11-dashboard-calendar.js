@@ -1,12 +1,20 @@
 /* ============================================================
    11-dashboard-calendar.js
    Календарь тренера:
-   - ячейка дня = одна ТРЕНИРОВКА (даже если внутри несколько блоков)
+   - ячейка дня = одна ТРЕНИРОВКА
    - клик по дню → модалка со списком тренировок дня
-   - клик по тренировке → редактор с блоками
-   - кнопка «Отметить факт» → модалка отметки (гибрид):
-       * по умолчанию блок = «Выполнено» у всех присутствующих
-       * исключения точечно: чекбокс присутствия + селект факта + комментарий
+   - в каждой тренировке кнопка «✓ Отметить» → модалка отметки
+   - кнопка «✎» → редактор тренировки
+   - кнопка «🗑» → удаление
+
+   Модалка отметки:
+   - список игроков тренировки
+   - у каждого игрока три кнопки: Выполнено / Частично / Не выполнено
+   - при «частично» / «не выполнено» появляется комментарий
+   - факт пишется во ВСЕ блоки тренировки данного игрока
+     (если у тренировки один блок — это эквивалентно «по блоку»)
+   - данные автоматически видны в карточке игрока (вкладка «Календарь»)
+     и в отчётах
    ============================================================ */
 
 /* ===== Месячная сетка ===== */
@@ -201,7 +209,6 @@ function openDaySessions(ds) {
         const blocksLine = s.blocks.length
           ? s.blocks.map(b => `${b.complex || 'Блок'} (${b.format || '—'}, ${b.duration || 0} мин)`).join(' · ')
           : '—';
-        // Считаем статус факта
         const facts = computeSessionFactsSummary(s, ds);
         const factHtml = `
           <span class="cc-fact-pill done">✓ ${facts.done}</span>
@@ -234,7 +241,6 @@ function openDaySessions(ds) {
     </div>`);
 }
 
-/* Подсчёт факта по тренировке (суммарно по всем игрокам и блокам) */
 function computeSessionFactsSummary(sess, ds) {
   let done = 0, partial = 0, notdone = 0, unmarked = 0;
   const sessionId = sess.id;
@@ -506,7 +512,6 @@ function removeBlockFromForm(idx) {
   renderSessionForm();
 }
 
-/* ===== Сохранение тренировки ===== */
 function saveSessionFromForm() {
   syncFormToContext();
   const ctx = __sessionEditContext;
@@ -618,7 +623,10 @@ function deleteSessionFromDay(ds, idx, ev) {
 }
 
 /* ============================================================
-   МОДАЛКА ОТМЕТКИ ФАКТА (гибрид)
+   МОДАЛКА ОТМЕТКИ ФАКТА
+   У каждого игрока — 3 кнопки: Выполнено / Частично / Не выполнено.
+   При «частично» / «не выполнено» появляется комментарий.
+   Факт применяется ко всем блокам тренировки этого игрока.
    ============================================================ */
 
 let __factModalState = null;
@@ -629,7 +637,7 @@ function openSessionFactModal(ds, sessionIdx, ev) {
   const s = sessions[sessionIdx];
   if (!s) return;
 
-  // Соберём игроков этой тренировки + их блоки
+  // Собираем игроков тренировки + их текущий факт (берём из первого блока)
   const playersData = [];
 
   DB.players.forEach(p => {
@@ -637,14 +645,18 @@ function openSessionFactModal(ds, sessionIdx, ev) {
     if (!Array.isArray(day)) return;
     const thisSession = day.find(x => x.id === s.id);
     if (!thisSession) return;
+
+    const blocks = Array.isArray(thisSession.blocks) ? thisSession.blocks : [];
+    // Факт считаем выставленным, если он одинаковый во всех блоках
+    const firstFact = blocks[0] ? (blocks[0].fact || '') : '';
+    const allSame = blocks.every(b => (b.fact || '') === firstFact);
+
     playersData.push({
       id: p.id,
       fio: p.fio,
       team: p.team || '',
-      blocks: (thisSession.blocks || []).map(b => ({
-        fact: b.fact || '',
-        comment: b.comment || ''
-      }))
+      fact: allSame ? firstFact : (firstFact || ''),
+      comment: blocks[0] ? (blocks[0].comment || '') : ''
     });
   });
 
@@ -653,7 +665,9 @@ function openSessionFactModal(ds, sessionIdx, ev) {
     sessionId: s.id,
     session: {
       name: s.name || '',
-      blocks: s.blocks.map(b => ({ ...b }))
+      blockCount: s.blocks.length,
+      range: sessionTimeRange(s),
+      total: sessionTotalMinutes(s)
     },
     players: playersData
   };
@@ -665,74 +679,38 @@ function renderFactModal() {
   const st = __factModalState;
   if (!st) return;
 
-  const s = st.session;
   const playersCount = st.players.length;
-  const blocksCount = s.blocks.length;
 
-  // Блоки: селект «Факт по умолчанию» (без исключений)
-  const blocksHtml = s.blocks.map((b, bi) => {
-    const end = minutesToTime(timeToMinutes(b.startTime) + (Number(b.duration) || 0));
-    const opts = FACT_OPTIONS.map(f => {
-      const sel = (f.value === (b.fact || 'done')) ? 'selected' : '';
-      return `<option value="${f.value}" ${sel}>${f.label}</option>`;
-    }).join('');
-    return `<div class="fm-block">
-      <div class="fm-block-head">
-        <span class="fm-block-num">Блок #${bi + 1}</span>
-        <span class="fm-block-time">${escapeHtml(b.startTime || '')}–${end} · ${Number(b.duration) || 0} мин</span>
-      </div>
-      <div class="fm-block-name">${escapeHtml(b.complex || '—')} · ${escapeHtml(b.format || '—')}</div>
-      <div class="field" style="margin:0">
-        <label>Факт по умолчанию</label>
-        <select class="fm-block-fact" data-block-index="${bi}" onchange="onFactModalBlockChange(${bi}, this.value)">
-          ${opts}
-        </select>
-      </div>
-      <div class="field fm-block-comment-wrap" data-block-index="${bi}" style="margin-top:8px;display:${(b.fact === 'partial' || b.fact === 'notdone') ? 'block' : 'none'}">
-        <label>Комментарий к блоку (для «частично» / «не выполнено»)</label>
-        <input class="fm-block-comment" data-block-index="${bi}" value="${escapeAttr(b.comment || '')}" placeholder="причина или детали">
-      </div>
-    </div>`;
-  }).join('');
-
-  // Игроки: чекбокс присутствия + (если снят) — исключение
   const playersHtml = st.players.map((p, pi) => {
-    const rowsHtml = p.blocks.map((bl, bi) => {
-      const blockName = s.blocks[bi] ? (s.blocks[bi].complex || 'Блок #' + (bi + 1)) : ('Блок #' + (bi + 1));
-      const factOpts = FACT_OPTIONS.map(f => {
-        const sel = (f.value === (bl.fact || '')) ? 'selected' : '';
-        return `<option value="${f.value}" ${sel}>${f.label}</option>`;
-      }).join('');
-      return `<div class="fm-player-block" data-player-index="${pi}" data-block-index="${bi}">
-        <div class="fm-player-block-name">${escapeHtml(blockName)}</div>
-        <div class="fm-player-block-fields">
-          <select class="fm-player-fact" onchange="onFactModalPlayerChange(${pi},${bi}, this.value)">
-            <option value="">— по умолчанию —</option>
-            ${factOpts}
-          </select>
-          <input class="fm-player-comment" value="${escapeAttr(bl.comment || '')}" placeholder="комментарий"
-                 oninput="onFactModalPlayerComment(${pi},${bi}, this.value)"
-                 style="display:${(bl.fact === 'partial' || bl.fact === 'notdone') ? 'block' : 'none'}">
-        </div>
-      </div>`;
-    }).join('');
-
-    const wasPresent = p.blocks.some(bl => bl.fact !== ''); // если хоть что-то отмечено — считаем, что был
-    const present = p.blocks.every(bl => !bl.fact) ? true : wasPresent; // по умолчанию — присутствует
-
-    return `<div class="fm-player" data-player-index="${pi}">
-      <div class="fm-player-head">
-        <label class="fm-player-present">
-          <input type="checkbox" ${present ? 'checked' : ''} onchange="onFactModalPresent(${pi}, this.checked)">
-          <span class="fm-player-fio">${escapeHtml(p.fio)}</span>
-          ${p.team ? `<span class="fm-player-team">${escapeHtml(p.team)}</span>` : ''}
-        </label>
-        <button type="button" class="fm-player-toggle" onclick="toggleFactPlayer(${pi}, this)">
-          <span class="fm-toggle-caret">▾</span>
+    const factCls = p.fact || '';
+    return `<div class="fm-player-row" data-player-index="${pi}">
+      <div class="fm-player-info">
+        <div class="fm-player-fio">${escapeHtml(p.fio)}</div>
+        ${p.team ? `<div class="fm-player-team">${escapeHtml(p.team)}</div>` : ''}
+      </div>
+      <div class="fm-buttons">
+        <button type="button"
+                class="fm-btn ${factCls === 'done' ? 'active done' : ''}"
+                onclick="setFactForPlayer(${pi}, 'done')">
+          ✓ Выполнено
+        </button>
+        <button type="button"
+                class="fm-btn ${factCls === 'partial' ? 'active partial' : ''}"
+                onclick="setFactForPlayer(${pi}, 'partial')">
+          ~ Частично
+        </button>
+        <button type="button"
+                class="fm-btn ${factCls === 'notdone' ? 'active notdone' : ''}"
+                onclick="setFactForPlayer(${pi}, 'notdone')">
+          ✗ Не выполнено
         </button>
       </div>
-      <div class="fm-player-body" id="fm-player-body-${pi}" style="display:none">
-        ${rowsHtml}
+      <div class="fm-comment-wrap" data-player-index="${pi}"
+           style="display:${(p.fact === 'partial' || p.fact === 'notdone') ? 'block' : 'none'}">
+        <input type="text" class="fm-comment-input"
+               placeholder="Комментарий (обязательно)"
+               value="${escapeAttr(p.comment || '')}"
+               oninput="setCommentForPlayer(${pi}, this.value)">
       </div>
     </div>`;
   }).join('');
@@ -741,26 +719,16 @@ function renderFactModal() {
     <h3>Отметка факта</h3>
     <p class="subtitle" style="margin-top:-8px">
       ${escapeHtml(st.session.name || 'Тренировка')} · ${escapeHtml(formatDateFull(st.ds))}
-      · ${playersCount} ${plural(playersCount, 'игрок', 'игрока', 'игроков')} · ${blocksCount} ${plural(blocksCount, 'блок', 'блока', 'блоков')}
+      · ${escapeHtml(st.session.range || '')} · ${st.session.total} мин · ${playersCount} ${plural(playersCount, 'игрок', 'игрока', 'игроков')}
     </p>
 
     <div class="fm-toolbar">
-      <button type="button" class="btn btn-sm" onclick="factModalBulkSet('done')">✓ Всё выполнено</button>
-      <button type="button" class="btn btn-sm btn-ghost" onclick="factModalBulkSet('partial')">~ Частично</button>
-      <button type="button" class="btn btn-sm btn-ghost" onclick="factModalBulkSet('notdone')">✗ Не выполнено</button>
-      <button type="button" class="btn btn-sm btn-ghost" onclick="factModalBulkClear()">Сбросить</button>
-      <button type="button" class="btn btn-sm btn-ghost" onclick="factModalExpandAll()">Развернуть всех</button>
+      <button type="button" class="btn btn-sm" onclick="factModalAllDone()">✓ Всем «Выполнено»</button>
+      <button type="button" class="btn btn-sm btn-ghost" onclick="factModalClear()">Сбросить</button>
     </div>
 
-    <div class="fm-section">
-      <h4>Факт по умолчанию (для всех, у кого не указано исключение)</h4>
-      <div class="fm-blocks">${blocksHtml}</div>
-    </div>
-
-    <div class="fm-section">
-      <h4>Игроки</h4>
-      <p class="subtitle" style="margin-top:0;margin-bottom:8px">По умолчанию все присутствуют и получают «факт по умолчанию». Разверните игрока, чтобы задать индивидуальный факт.</p>
-      <div class="fm-players">${playersHtml}</div>
+    <div class="fm-players">
+      ${playersHtml || '<p class="subtitle" style="text-align:center;padding:20px 0">В тренировке нет игроков.</p>'}
     </div>
 
     <div class="btn-row" style="margin-top:16px">
@@ -770,111 +738,81 @@ function renderFactModal() {
   `);
 }
 
-/* ---- Взаимодействие с модалкой ---- */
-
-function onFactModalBlockChange(bi, value) {
-  const st = __factModalState;
-  if (!st || !st.session.blocks[bi]) return;
-  st.session.blocks[bi].fact = value;
-  const wrap = document.querySelector(`.fm-block-comment-wrap[data-block-index="${bi}"]`);
-  if (wrap) wrap.style.display = (value === 'partial' || value === 'notdone') ? 'block' : 'none';
-}
-
-function onFactModalPlayerChange(pi, bi, value) {
+function setFactForPlayer(pi, fact) {
   const st = __factModalState;
   if (!st || !st.players[pi]) return;
-  if (!st.players[pi].blocks[bi]) return;
-  st.players[pi].blocks[bi].fact = value;
-  const el = document.querySelector(`.fm-player[data-player-index="${pi}"] .fm-player-block[data-block-index="${bi}"] .fm-player-comment`);
-  if (el) el.style.display = (value === 'partial' || value === 'notdone') ? 'block' : 'none';
-}
 
-function onFactModalPlayerComment(pi, bi, value) {
-  const st = __factModalState;
-  if (!st || !st.players[pi] || !st.players[pi].blocks[bi]) return;
-  st.players[pi].blocks[bi].comment = value;
-}
+  const current = st.players[pi].fact;
+  // Повторное нажатие той же кнопки — снимаем выбор
+  const newFact = (current === fact) ? '' : fact;
 
-function onFactModalPresent(pi, checked) {
-  const st = __factModalState;
-  if (!st || !st.players[pi]) return;
-  // Если сняли галочку — обнуляем все блоки игрока (отсутствовал)
-  if (!checked) {
-    st.players[pi].blocks.forEach(b => { b.fact = 'notdone'; b.comment = 'Отсутствовал'; });
-    // Обновим UI
-    const el = document.querySelector(`.fm-player[data-player-index="${pi}"]`);
-    if (el) {
-      el.querySelectorAll('.fm-player-fact').forEach(sel => { sel.value = 'notdone'; });
-      el.querySelectorAll('.fm-player-comment').forEach(inp => {
-        inp.value = 'Отсутствовал';
-        inp.style.display = 'block';
-      });
+  st.players[pi].fact = newFact;
+  if (newFact !== 'partial' && newFact !== 'notdone') {
+    st.players[pi].comment = '';
+  }
+
+  // Обновляем кнопки
+  const row = document.querySelector(`.fm-player-row[data-player-index="${pi}"]`);
+  if (row) {
+    row.querySelectorAll('.fm-btn').forEach(btn => {
+      btn.classList.remove('active', 'done', 'partial', 'notdone');
+    });
+    if (newFact) {
+      const btn = row.querySelectorAll('.fm-btn')[
+        newFact === 'done' ? 0 : newFact === 'partial' ? 1 : 2
+      ];
+      if (btn) btn.classList.add('active', newFact);
     }
-  } else {
-    // Вернули галочку — очищаем индивидуальные отметки
-    st.players[pi].blocks.forEach(b => { b.fact = ''; b.comment = ''; });
-    const el = document.querySelector(`.fm-player[data-player-index="${pi}"]`);
-    if (el) {
-      el.querySelectorAll('.fm-player-fact').forEach(sel => { sel.value = ''; });
-      el.querySelectorAll('.fm-player-comment').forEach(inp => {
-        inp.value = '';
-        inp.style.display = 'none';
-      });
+    // Комментарий
+    const wrap = row.querySelector('.fm-comment-wrap');
+    const inp = row.querySelector('.fm-comment-input');
+    if (wrap) wrap.style.display = (newFact === 'partial' || newFact === 'notdone') ? 'block' : 'none';
+    if (inp) {
+      inp.value = st.players[pi].comment || '';
+      inp.placeholder = (newFact === 'partial' || newFact === 'notdone') ? 'Комментарий (обязательно)' : 'Комментарий';
     }
   }
 }
 
-function toggleFactPlayer(pi, btn) {
-  const body = document.getElementById('fm-player-body-' + pi);
-  if (!body) return;
-  const open = body.style.display !== 'none';
-  body.style.display = open ? 'none' : 'block';
-  if (btn) btn.classList.toggle('open', !open);
+function setCommentForPlayer(pi, value) {
+  const st = __factModalState;
+  if (!st || !st.players[pi]) return;
+  st.players[pi].comment = value;
 }
 
-function factModalExpandAll() {
-  __factModalState && __factModalState.players.forEach((_, pi) => {
-    const body = document.getElementById('fm-player-body-' + pi);
-    if (body) body.style.display = 'block';
-    const btn = document.querySelector(`.fm-player[data-player-index="${pi}"] .fm-player-toggle`);
-    if (btn) btn.classList.add('open');
-  });
-}
-
-/* Массовые кнопки: применить факт ко всем блокам по умолчанию */
-function factModalBulkSet(fact) {
+function factModalAllDone() {
   const st = __factModalState;
   if (!st) return;
-  st.session.blocks.forEach((b, bi) => {
-    b.fact = fact;
-    b.comment = '';
-    const sel = document.querySelector(`.fm-block-fact[data-block-index="${bi}"]`);
-    if (sel) sel.value = fact;
-    const wrap = document.querySelector(`.fm-block-comment-wrap[data-block-index="${bi}"]`);
-    if (wrap) wrap.style.display = (fact === 'partial' || fact === 'notdone') ? 'block' : 'none';
-  });
-}
-
-function factModalBulkClear() {
-  const st = __factModalState;
-  if (!st) return;
-  st.session.blocks.forEach((b, bi) => {
-    b.fact = '';
-    b.comment = '';
-    const sel = document.querySelector(`.fm-block-fact[data-block-index="${bi}"]`);
-    if (sel) sel.value = '';
-    const wrap = document.querySelector(`.fm-block-comment-wrap[data-block-index="${bi}"]`);
-    if (wrap) wrap.style.display = 'none';
-  });
   st.players.forEach((p, pi) => {
-    p.blocks.forEach((bl, bi) => {
-      bl.fact = '';
-      bl.comment = '';
-      const sel = document.querySelector(`.fm-player[data-player-index="${pi}"] .fm-player-block[data-block-index="${bi}"] .fm-player-fact`);
-      if (sel) sel.value = '';
-      const inp = document.querySelector(`.fm-player[data-player-index="${pi}"] .fm-player-block[data-block-index="${bi}"] .fm-player-comment`);
-      if (inp) { inp.value = ''; inp.style.display = 'none'; }
-    });
+    p.fact = 'done';
+    p.comment = '';
+    const row = document.querySelector(`.fm-player-row[data-player-index="${pi}"]`);
+    if (row) {
+      row.querySelectorAll('.fm-btn').forEach(btn => btn.classList.remove('active', 'done', 'partial', 'notdone'));
+      const firstBtn = row.querySelectorAll('.fm-btn')[0];
+      if (firstBtn) firstBtn.classList.add('active', 'done');
+      const wrap = row.querySelector('.fm-comment-wrap');
+      if (wrap) wrap.style.display = 'none';
+      const inp = row.querySelector('.fm-comment-input');
+      if (inp) inp.value = '';
+    }
+  });
+}
+
+function factModalClear() {
+  const st = __factModalState;
+  if (!st) return;
+  st.players.forEach((p, pi) => {
+    p.fact = '';
+    p.comment = '';
+    const row = document.querySelector(`.fm-player-row[data-player-index="${pi}"]`);
+    if (row) {
+      row.querySelectorAll('.fm-btn').forEach(btn => btn.classList.remove('active', 'done', 'partial', 'notdone'));
+      const wrap = row.querySelector('.fm-comment-wrap');
+      if (wrap) wrap.style.display = 'none';
+      const inp = row.querySelector('.fm-comment-input');
+      if (inp) inp.value = '';
+    }
   });
 }
 
@@ -883,64 +821,46 @@ function closeFactModal() {
   closeModal();
 }
 
-/* ===== Сохранение отметки ===== */
 function saveSessionFact() {
   const st = __factModalState;
   if (!st) return;
 
   // Валидация: для «частично» и «не выполнено» обязателен комментарий
-  for (let bi = 0; bi < st.session.blocks.length; bi++) {
-    const b = st.session.blocks[bi];
-    if ((b.fact === 'partial' || b.fact === 'notdone') && !(b.comment || '').trim()) {
-      alert(`Блок #${bi + 1}: для «${factLabel(b.fact)}» укажите комментарий`);
-      return;
-    }
-  }
   for (let pi = 0; pi < st.players.length; pi++) {
     const p = st.players[pi];
-    for (let bi = 0; bi < p.blocks.length; bi++) {
-      const bl = p.blocks[bi];
-      if (bl.fact && (bl.fact === 'partial' || bl.fact === 'notdone') && !(bl.comment || '').trim()) {
-        alert(`Игрок ${p.fio}, блок #${bi + 1}: укажите комментарий для «${factLabel(bl.fact)}»`);
-        return;
-      }
+    if ((p.fact === 'partial' || p.fact === 'notdone') && !(p.comment || '').trim()) {
+      alert(`${p.fio}: укажите комментарий для «${factLabel(p.fact)}»`);
+      return;
     }
   }
 
   const ds = st.ds;
   const sessionId = st.sessionId;
 
-  // Применяем: каждому игроку — либо его исключение, либо факт по умолчанию блока
+  // Применяем: для каждого игрока — его факт во ВСЕ блоки этой тренировки
   st.players.forEach(pd => {
+    if (!pd.fact) return; // пропускаем неотмеченных
     const p = DB.players.find(x => x.id === pd.id);
     if (!p || !p.calendar || !p.calendar[ds]) return;
     const sess = p.calendar[ds].find(x => x.id === sessionId);
     if (!sess || !Array.isArray(sess.blocks)) return;
 
-    sess.blocks.forEach((b, bi) => {
-      const defaultFact = st.session.blocks[bi] ? (st.session.blocks[bi].fact || '') : '';
-      const defaultComment = st.session.blocks[bi] ? (st.session.blocks[bi].comment || '') : '';
-      const ex = pd.blocks[bi] || {};
-      if (ex.fact) {
-        b.fact = ex.fact;
-        b.comment = (ex.comment || '').trim();
-      } else {
-        b.fact = defaultFact;
-        b.comment = (defaultComment || '').trim();
-      }
+    sess.blocks.forEach(b => {
+      b.fact = pd.fact;
+      b.comment = (pd.comment || '').trim();
     });
   });
 
   saveDB();
   closeFactModal();
-  openDaySessions(ds); // перерисовать модалку дня с обновлённой статистикой
+  openDaySessions(ds);
   renderCoachCalendar();
   updateNotifBadge();
   toast('Факт сохранён');
 }
 
 /* ============================================================
-   ГРУППИРОВАННЫЙ СПИСОК ИГРОКОВ (для редактора тренировки)
+   ГРУППИРОВАННЫЙ СПИСОК ИГРОКОВ
    ============================================================ */
 function renderCoachGroupedPlayers(players, preselectedIds) {
   const selected = new Set(preselectedIds || []);

@@ -1,7 +1,6 @@
 /* ============================================================
    06b-report.js
-   Отчёт по итогам месяца. Считает блоки календаря игроков.
-   Отдельно фиксирует «отсутствовал» (fact=notdone + comment=Отсутствовал).
+   Отчёт по итогам месяца.
    ============================================================ */
 
 function collectAllPlanMonths() {
@@ -26,15 +25,11 @@ function monthLabelFromKey(ym) {
   return `${MONTH_NAMES_RU[m - 1]} ${y}`;
 }
 
-function isAbsent(block) {
-  return block && block.fact === 'notdone' && (block.comment || '').trim().toLowerCase() === 'отсутствовал';
-}
-
 function computePlayerMonthStats(p, month) {
   if (!p || !p.calendar) {
-    return { total: 0, done: 0, partial: 0, notdone: 0, absent: 0, volume: 0, items: [], completion: 0 };
+    return { total: 0, done: 0, partial: 0, notdone: 0, volume: 0, items: [], completion: 0 };
   }
-  let total = 0, done = 0, partial = 0, notdone = 0, absent = 0, volume = 0;
+  let total = 0, done = 0, partial = 0, notdone = 0, volume = 0;
   const items = [];
 
   Object.keys(p.calendar).forEach(date => {
@@ -46,9 +41,7 @@ function computePlayerMonthStats(p, month) {
       (sess.blocks || []).forEach(b => {
         total++;
         volume += Number(b.duration) || 0;
-        if (isAbsent(b)) {
-          absent++;
-        } else if (b.fact === 'done') done++;
+        if (b.fact === 'done') done++;
         else if (b.fact === 'partial') partial++;
         else if (b.fact === 'notdone') notdone++;
         items.push({
@@ -58,31 +51,27 @@ function computePlayerMonthStats(p, month) {
           startTime: b.startTime || '',
           duration: Number(b.duration) || 0,
           fact: b.fact || '',
-          comment: b.comment || '',
-          absent: isAbsent(b)
+          comment: b.comment || ''
         });
       });
     });
   });
 
-  const counted = total - absent;
-  const completion = counted ? Math.round((done + partial * 0.5) / counted * 100) : 0;
-  return { total, done, partial, notdone, absent, volume, items, completion };
+  const completion = total ? Math.round((done + partial * 0.5) / total * 100) : 0;
+  return { total, done, partial, notdone, volume, items, completion };
 }
 
 function computeAllPlayersMonthStats(month) {
-  let total = 0, done = 0, partial = 0, notdone = 0, absent = 0;
+  let total = 0, done = 0, partial = 0, notdone = 0;
   DB.players.forEach(p => {
     const st = computePlayerMonthStats(p, month);
     total += st.total;
     done += st.done;
     partial += st.partial;
     notdone += st.notdone;
-    absent += st.absent;
   });
-  const counted = total - absent;
-  const overall = counted ? Math.round((done + partial * 0.5) / counted * 100) : 0;
-  return { total, done, partial, notdone, absent, overall };
+  const overall = total ? Math.round((done + partial * 0.5) / total * 100) : 0;
+  return { total, done, partial, notdone, overall };
 }
 
 function renderReport() {
@@ -121,7 +110,6 @@ function renderReport() {
         <div class="kpi"><div class="lbl">Выполнено</div><div class="val" style="color:#1e7a3f">${allStats.done}</div></div>
         <div class="kpi"><div class="lbl">Частично</div><div class="val" style="color:#b8860b">${allStats.partial}</div></div>
         <div class="kpi red"><div class="lbl">Не выполнено</div><div class="val">${allStats.notdone}</div></div>
-        <div class="kpi red"><div class="lbl">Отсутствовал</div><div class="val" style="color:#5a6169">${allStats.absent}</div></div>
         <div class="kpi red"><div class="lbl">Общий % выполнения</div><div class="val">${allStats.overall}%</div></div>
       </div>
     </div>`;
@@ -135,8 +123,7 @@ function renderReport() {
     renderedPlayers++;
 
     const rows = st.items.map(it => {
-      const factCls = it.absent ? 'fact-absent'
-                   : it.fact === 'done' ? 'fact-done'
+      const factCls = it.fact === 'done' ? 'fact-done'
                    : it.fact === 'partial' ? 'fact-partial'
                    : it.fact === 'notdone' ? 'fact-notdone'
                    : '';
@@ -145,7 +132,7 @@ function renderReport() {
         <td>${escapeHtml(it.complex || '')}</td>
         <td>${escapeHtml(it.format || '')}</td>
         <td>${it.duration}</td>
-        <td>${it.absent ? 'Отсутствовал' : factLabel(it.fact)}</td>
+        <td>${factLabel(it.fact)}</td>
         <td>${escapeHtml(it.comment || '')}</td>
       </tr>`;
     }).join('');
@@ -158,12 +145,11 @@ function renderReport() {
           <span class="badge done">Выполнено: ${st.done}</span>
           <span class="badge partial">Частично: ${st.partial}</span>
           <span class="badge notdone">Не выполнено: ${st.notdone}</span>
-          ${st.absent ? `<span class="badge absent">Отсутствовал: ${st.absent}</span>` : ''}
           <span class="badge">Всего: ${st.total}</span>
           <span class="badge">Объём: ${st.volume} мин</span>
         </div>
         <div class="report-progress"><span style="width:${st.completion}%"></span></div>
-        <div style="font-size:12px;font-weight:700;color:var(--ak-green);margin-bottom:10px">Выполнение: ${st.completion}% (без учёта отсутствий)</div>
+        <div style="font-size:12px;font-weight:700;color:var(--ak-green);margin-bottom:10px">Выполнение: ${st.completion}%</div>
         <table class="report-table">
           <thead><tr><th>Дата</th><th>Комплекс</th><th>Формат</th><th>Мин</th><th>Факт</th><th>Примечание</th></tr></thead>
           <tbody>${rows}</tbody>

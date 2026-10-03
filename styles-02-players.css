@@ -1,0 +1,457 @@
+/* ============================================================
+   styles-02-players.css
+   Игроки и карточка:
+   - сетка игроков, плитки, аватар, счёт
+   - паспорт
+   - радары и легенда оценок
+   - дашборд: KPI, быстрые переходы, ближайшие тренировки
+   - отчёт по игрокам: карточки, сводка, прогресс-бар, таблица
+
+   Разбиение styles.css:
+     styles-01-base.css      — токены, шапка, кнопки, карточки (создан)
+     styles-02-players.css   ← этот файл
+     styles-03-calendar.css  — календари, план развития, поповеры
+     styles-04-modal.css     — модалки, авторизация
+     styles-05-reports.css   — отчёт тренера, адаптив, печать
+   ============================================================ */
+
+/* ===== СПИСОК ИГРОКОВ ===== */
+.players-grid{
+  display:grid;
+  grid-template-columns:repeat(auto-fill,minmax(260px,1fr));
+  gap:16px;
+}
+
+.player-tile{
+  background:#fff;
+  border-radius:8px;
+  box-shadow:var(--shadow);
+  padding:16px;
+  cursor:pointer;
+  transition:.2s;
+  border-left:5px solid var(--ak-green);
+  display:flex;
+  gap:14px;
+  align-items:center;
+  position:relative;
+}
+.player-tile:hover{
+  box-shadow:var(--shadow-lg);
+  transform:translateY(-2px);
+  border-left-color:var(--ak-red);
+}
+.player-tile .tile-delete{
+  position:absolute;
+  top:8px;
+  right:8px;
+  width:26px;
+  height:26px;
+  border-radius:50%;
+  background:rgba(255,255,255,.9);
+  border:1px solid var(--ak-gray-mid);
+  color:var(--ak-gray-dark);
+  cursor:pointer;
+  font-size:14px;
+  line-height:1;
+  display:none;
+  align-items:center;
+  justify-content:center;
+  padding:0;
+  transition:.15s;
+  font-family:inherit;
+  z-index:2;
+}
+.player-tile:hover .tile-delete{display:flex}
+.player-tile .tile-delete:hover{
+  background:var(--ak-red);
+  color:#fff;
+  border-color:var(--ak-red);
+}
+
+.player-avatar{
+  width:56px;
+  height:56px;
+  border-radius:50%;
+  background:var(--ak-gray-light);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  font-size:22px;
+  font-weight:900;
+  color:var(--ak-green);
+  overflow:hidden;
+  flex-shrink:0;
+  border:3px solid var(--ak-green);
+  font-family:var(--font-display);
+}
+.player-avatar img{
+  width:100%;
+  height:100%;
+  object-fit:cover;
+  object-position:center top;
+  display:block;
+}
+
+.player-info{flex:1;min-width:0}
+.player-info .name{
+  font-weight:700;
+  font-size:14px;
+  color:var(--ak-green);
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+.player-info .meta{
+  font-size:11px;
+  color:var(--ak-gray-dark);
+  margin-top:2px;
+}
+
+.player-score{
+  background:var(--ak-green);
+  color:#fff;
+  border-radius:20px;
+  padding:4px 10px;
+  font-size:13px;
+  font-weight:900;
+  flex-shrink:0;
+  font-family:var(--font-display);
+  min-width:42px;
+  text-align:center;
+}
+
+/* ===== ПАСПОРТ ===== */
+.passport{
+  display:grid;
+  grid-template-columns:220px 1fr;
+  gap:24px;
+  align-items:start;
+}
+.passport-photo{
+  width:100%;
+  aspect-ratio:3/4;
+  background:var(--ak-gray-light);
+  border-radius:8px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  color:var(--ak-gray-dark);
+  font-size:13px;
+  overflow:hidden;
+  border:3px solid var(--ak-green);
+  position:relative;
+}
+.passport-photo::after{
+  content:'';
+  position:absolute;
+  bottom:-3px;
+  left:-3px;
+  right:-3px;
+  height:6px;
+  background:var(--ak-red);
+}
+.passport-photo img{
+  width:100%;
+  height:100%;
+  object-fit:cover;
+  border-radius:5px;
+}
+.passport-fields{
+  display:grid;
+  grid-template-columns:repeat(2,1fr);
+  gap:12px 24px;
+}
+
+/* ===== РАДАР И ОЦЕНКИ ===== */
+.radar-wrap{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:24px;
+  align-items:center;
+}
+.radar-box{
+  position:relative;
+  height:340px;
+}
+.scores-legend{
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+}
+.score-item{
+  display:flex;
+  align-items:center;
+  gap:12px;
+  padding:10px 14px;
+  background:var(--ak-gray-light);
+  border-radius:6px;
+  border-left:3px solid var(--ak-green);
+}
+.score-item .lbl{
+  font-weight:900;
+  color:var(--ak-green);
+  min-width:70px;
+  font-size:12px;
+  font-family:var(--font-display);
+  text-transform:uppercase;
+  letter-spacing:.5px;
+}
+.score-item .bar{
+  flex:1;
+  height:8px;
+  background:var(--ak-gray-mid);
+  border-radius:4px;
+  overflow:hidden;
+}
+.score-item .bar span{
+  display:block;
+  height:100%;
+  background:linear-gradient(90deg,var(--ak-green),var(--ak-red));
+  border-radius:4px;
+}
+.score-item .val{
+  font-weight:900;
+  color:var(--ak-green);
+  min-width:36px;
+  text-align:right;
+  font-size:14px;
+  font-family:var(--font-display);
+}
+.score-item .hint{
+  font-size:11px;
+  color:var(--ak-gray-dark);
+  white-space:nowrap;
+}
+
+/* ===== ДАШБОРД ===== */
+.dash-grid{
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(180px,1fr));
+  gap:16px;
+  margin-bottom:24px;
+}
+
+.kpi{
+  background:#fff;
+  border-radius:6px;
+  padding:18px;
+  box-shadow:var(--shadow);
+  border-left:5px solid var(--ak-green);
+  position:relative;
+  overflow:hidden;
+}
+.kpi.red{border-left-color:var(--ak-red)}
+.kpi::after{
+  content:'1956';
+  position:absolute;
+  right:10px;
+  bottom:6px;
+  font-family:var(--font-display);
+  font-weight:900;
+  font-size:32px;
+  color:rgba(21,71,52,.05);
+  letter-spacing:-1px;
+}
+.kpi.red::after{color:rgba(200,16,46,.05)}
+.kpi .lbl{
+  font-size:10px;
+  text-transform:uppercase;
+  letter-spacing:1px;
+  color:var(--ak-gray-dark);
+  font-weight:900;
+  margin-bottom:6px;
+  font-family:var(--font-display);
+}
+.kpi .val{
+  font-size:32px;
+  font-weight:900;
+  color:var(--ak-green);
+  line-height:1;
+  font-family:var(--font-display);
+}
+.kpi .sub{
+  font-size:11px;
+  color:var(--ak-gray-dark);
+  margin-top:6px;
+}
+
+/* Ближайшие тренировки */
+.upcoming{
+  background:#fff;
+  border-radius:6px;
+  padding:14px 16px;
+  box-shadow:var(--shadow);
+  margin-bottom:8px;
+  border-left:5px solid var(--ak-red);
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:12px;
+  cursor:pointer;
+  transition:.15s;
+}
+.upcoming:hover{transform:translateX(4px)}
+.upcoming .date{
+  font-weight:900;
+  color:var(--ak-red);
+  font-size:12px;
+  min-width:100px;
+  font-family:var(--font-display);
+  letter-spacing:.3px;
+  text-transform:uppercase;
+}
+.upcoming .what{flex:1;font-size:13px}
+.upcoming .who{
+  font-weight:900;
+  color:var(--ak-green);
+  font-size:11px;
+  font-family:var(--font-display);
+  text-transform:uppercase;
+  letter-spacing:.3px;
+}
+
+/* ===== ОТЧЁТ ПО ИГРОКАМ (карточки и таблица) ===== */
+.report-player{
+  border-left:5px solid var(--ak-green);
+  background:#fff;
+  border-radius:6px;
+  padding:14px 16px;
+  margin-bottom:14px;
+  box-shadow:var(--shadow);
+}
+.report-player h3{margin-bottom:6px}
+.report-player .meta{
+  font-size:12px;
+  color:var(--ak-gray-dark);
+  margin-bottom:10px;
+}
+.report-summary{
+  display:flex;
+  gap:14px;
+  flex-wrap:wrap;
+  margin-bottom:10px;
+  align-items:center;
+}
+.report-summary .badge{
+  background:var(--ak-gray-light);
+  border-left:4px solid var(--ak-green);
+  border-radius:4px;
+  padding:6px 12px;
+  font-size:12px;
+  font-weight:700;
+}
+.report-summary .badge.done{
+  border-left-color:#1e7a3f;
+  color:#1e7a3f;
+}
+.report-summary .badge.partial{
+  border-left-color:#b8860b;
+  color:#b8860b;
+}
+.report-summary .badge.notdone{
+  border-left-color:var(--ak-red);
+  color:var(--ak-red);
+}
+.report-summary .badge.absent{
+  border-left-color:var(--ak-gray-dark);
+  color:var(--ak-gray-dark);
+  background:var(--ak-gray-light);
+}
+
+.report-progress{
+  height:12px;
+  background:var(--ak-gray-mid);
+  border-radius:6px;
+  overflow:hidden;
+  margin-bottom:10px;
+}
+.report-progress span{
+  display:block;
+  height:100%;
+  background:linear-gradient(90deg,var(--ak-green),var(--ak-red));
+  border-radius:6px;
+  transition:width .3s;
+}
+
+.report-table{
+  width:100%;
+  border-collapse:collapse;
+  font-size:12px;
+}
+.report-table th{
+  background:var(--ak-green);
+  color:#fff;
+  padding:6px 8px;
+  text-align:left;
+  font-size:10px;
+  text-transform:uppercase;
+  letter-spacing:.5px;
+}
+.report-table td{
+  padding:6px 8px;
+  border-bottom:1px solid var(--ak-gray-mid);
+  vertical-align:top;
+}
+.report-table tr.fact-done td:last-child{
+  color:#1e7a3f;
+  font-weight:700;
+}
+.report-table tr.fact-partial td:last-child{
+  color:#b8860b;
+  font-weight:700;
+}
+.report-table tr.fact-notdone td:last-child{
+  color:var(--ak-red);
+  font-weight:700;
+}
+.report-table tr.fact-absent td{
+  color:var(--ak-gray-dark);
+  font-style:italic;
+}
+.report-table tr.fact-absent td:last-child{
+  color:var(--ak-gray-dark);
+  font-weight:700;
+}
+
+/* ===== УВЕДОМЛЕНИЯ ===== */
+.notif-panel{
+  position:fixed;
+  top:76px;
+  right:24px;
+  width:380px;
+  background:#fff;
+  border-radius:8px;
+  box-shadow:var(--shadow-lg);
+  padding:16px;
+  z-index:200;
+  max-height:480px;
+  overflow:auto;
+  display:none;
+  border-top:5px solid var(--ak-red);
+}
+.notif-panel.active{display:block}
+.notif-item{
+  padding:10px 12px;
+  border-radius:4px;
+  margin-bottom:8px;
+  border-left:4px solid var(--ak-green);
+  background:var(--ak-gray-light);
+  cursor:pointer;
+  transition:.15s;
+}
+.notif-item:hover{background:var(--ak-gray-mid)}
+.notif-item.overdue{border-left-color:var(--ak-red);background:#fce8ec}
+.notif-item.today{border-left-color:#f59e0b;background:#fef3c7}
+.notif-item .n-title{
+  font-weight:900;
+  font-size:12px;
+  color:var(--ak-green);
+  font-family:var(--font-display);
+  letter-spacing:.3px;
+  text-transform:uppercase;
+}
+.notif-item .n-meta{
+  font-size:12px;
+  color:var(--ak-gray-dark);
+  margin-top:2px;
+}
