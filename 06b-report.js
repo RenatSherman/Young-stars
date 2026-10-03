@@ -1,11 +1,8 @@
 /* ============================================================
    06b-report.js
-   Отчёт по итогам месяца (экран «Отчёт по игрокам»).
-   Считает по блокам календаря игрока.
-   Загружается после 06-plan.js.
+   Отчёт по итогам месяца. Считает блоки календаря игроков.
+   Отдельно фиксирует «отсутствовал» (fact=notdone + comment=Отсутствовал).
    ============================================================ */
-
-/* ---------- Сбор доступных месяцев ---------- */
 
 function collectAllPlanMonths() {
   const set = new Set();
@@ -20,19 +17,24 @@ function collectAllPlanMonths() {
     });
   });
 
-  // Всегда добавляем текущий месяц, даже если тренировок нет
   set.add(currentMonth);
-
   return Array.from(set).sort();
 }
 
-/* ---------- Подсчёт по игроку за месяц ---------- */
+function monthLabelFromKey(ym) {
+  const [y, m] = ym.split('-').map(Number);
+  return `${MONTH_NAMES_RU[m - 1]} ${y}`;
+}
+
+function isAbsent(block) {
+  return block && block.fact === 'notdone' && (block.comment || '').trim().toLowerCase() === 'отсутствовал';
+}
 
 function computePlayerMonthStats(p, month) {
   if (!p || !p.calendar) {
-    return { total: 0, done: 0, partial: 0, notdone: 0, volume: 0, items: [], completion: 0 };
+    return { total: 0, done: 0, partial: 0, notdone: 0, absent: 0, volume: 0, items: [], completion: 0 };
   }
-  let total = 0, done = 0, partial = 0, notdone = 0, volume = 0;
+  let total = 0, done = 0, partial = 0, notdone = 0, absent = 0, volume = 0;
   const items = [];
 
   Object.keys(p.calendar).forEach(date => {
@@ -44,7 +46,9 @@ function computePlayerMonthStats(p, month) {
       (sess.blocks || []).forEach(b => {
         total++;
         volume += Number(b.duration) || 0;
-        if (b.fact === 'done') done++;
+        if (isAbsent(b)) {
+          absent++;
+        } else if (b.fact === 'done') done++;
         else if (b.fact === 'partial') partial++;
         else if (b.fact === 'notdone') notdone++;
         items.push({
@@ -54,30 +58,32 @@ function computePlayerMonthStats(p, month) {
           startTime: b.startTime || '',
           duration: Number(b.duration) || 0,
           fact: b.fact || '',
-          comment: b.comment || ''
+          comment: b.comment || '',
+          absent: isAbsent(b)
         });
       });
     });
   });
 
-  const completion = total ? Math.round((done + partial * 0.5) / total * 100) : 0;
-  return { total, done, partial, notdone, volume, items, completion };
+  const counted = total - absent;
+  const completion = counted ? Math.round((done + partial * 0.5) / counted * 100) : 0;
+  return { total, done, partial, notdone, absent, volume, items, completion };
 }
 
 function computeAllPlayersMonthStats(month) {
-  let total = 0, done = 0, partial = 0, notdone = 0;
+  let total = 0, done = 0, partial = 0, notdone = 0, absent = 0;
   DB.players.forEach(p => {
     const st = computePlayerMonthStats(p, month);
     total += st.total;
     done += st.done;
     partial += st.partial;
     notdone += st.notdone;
+    absent += st.absent;
   });
-  const overall = total ? Math.round((done + partial * 0.5) / total * 100) : 0;
-  return { total, done, partial, notdone, overall };
+  const counted = total - absent;
+  const overall = counted ? Math.round((done + partial * 0.5) / counted * 100) : 0;
+  return { total, done, partial, notdone, absent, overall };
 }
-
-/* ---------- Главный рендер экрана ---------- */
 
 function renderReport() {
   const monthSel = document.getElementById('report-month');
@@ -87,18 +93,15 @@ function renderReport() {
 
   const months = collectAllPlanMonths();
 
-  // Селект месяца
   if (monthSel) {
     const prev = monthSel.value || reportMonth;
     monthSel.innerHTML = months.map(m => `<option value="${m}">${monthLabelFromKey(m)}</option>`).join('');
     reportMonth = (prev && months.includes(prev)) ? prev : months[months.length - 1];
     monthSel.value = reportMonth;
   } else {
-    // Если вдруг селекта нет — берём последний месяц
     if (!reportMonth) reportMonth = months[months.length - 1];
   }
 
-  // Селект игрока
   if (playerSel) {
     const prevPlayer = playerSel.value;
     playerSel.innerHTML = '<option value="">Все игроки</option>' +
@@ -110,7 +113,6 @@ function renderReport() {
   const filterPid = playerSel ? playerSel.value : '';
   const allStats = computeAllPlayersMonthStats(month);
 
-  // KPI-сводка
   let html = `
     <div class="card">
       <h2>Сводка по месяцу «${escapeHtml(monthLabelFromKey(month))}»</h2>
@@ -119,21 +121,22 @@ function renderReport() {
         <div class="kpi"><div class="lbl">Выполнено</div><div class="val" style="color:#1e7a3f">${allStats.done}</div></div>
         <div class="kpi"><div class="lbl">Частично</div><div class="val" style="color:#b8860b">${allStats.partial}</div></div>
         <div class="kpi red"><div class="lbl">Не выполнено</div><div class="val">${allStats.notdone}</div></div>
+        <div class="kpi red"><div class="lbl">Отсутствовал</div><div class="val" style="color:#5a6169">${allStats.absent}</div></div>
         <div class="kpi red"><div class="lbl">Общий % выполнения</div><div class="val">${allStats.overall}%</div></div>
       </div>
     </div>`;
 
-  // Карточки по игрокам
   const players = filterPid ? DB.players.filter(p => p.id === filterPid) : DB.players;
   let renderedPlayers = 0;
 
   players.forEach(p => {
     const st = computePlayerMonthStats(p, month);
-    if (!st || !st.total) return; // пропускаем игроков без данных в этом месяце
+    if (!st || !st.total) return;
     renderedPlayers++;
 
     const rows = st.items.map(it => {
-      const factCls = it.fact === 'done' ? 'fact-done'
+      const factCls = it.absent ? 'fact-absent'
+                   : it.fact === 'done' ? 'fact-done'
                    : it.fact === 'partial' ? 'fact-partial'
                    : it.fact === 'notdone' ? 'fact-notdone'
                    : '';
@@ -142,7 +145,7 @@ function renderReport() {
         <td>${escapeHtml(it.complex || '')}</td>
         <td>${escapeHtml(it.format || '')}</td>
         <td>${it.duration}</td>
-        <td>${factLabel(it.fact)}</td>
+        <td>${it.absent ? 'Отсутствовал' : factLabel(it.fact)}</td>
         <td>${escapeHtml(it.comment || '')}</td>
       </tr>`;
     }).join('');
@@ -155,11 +158,12 @@ function renderReport() {
           <span class="badge done">Выполнено: ${st.done}</span>
           <span class="badge partial">Частично: ${st.partial}</span>
           <span class="badge notdone">Не выполнено: ${st.notdone}</span>
+          ${st.absent ? `<span class="badge absent">Отсутствовал: ${st.absent}</span>` : ''}
           <span class="badge">Всего: ${st.total}</span>
           <span class="badge">Объём: ${st.volume} мин</span>
         </div>
         <div class="report-progress"><span style="width:${st.completion}%"></span></div>
-        <div style="font-size:12px;font-weight:700;color:var(--ak-green);margin-bottom:10px">Выполнение: ${st.completion}%</div>
+        <div style="font-size:12px;font-weight:700;color:var(--ak-green);margin-bottom:10px">Выполнение: ${st.completion}% (без учёта отсутствий)</div>
         <table class="report-table">
           <thead><tr><th>Дата</th><th>Комплекс</th><th>Формат</th><th>Мин</th><th>Факт</th><th>Примечание</th></tr></thead>
           <tbody>${rows}</tbody>
@@ -167,22 +171,19 @@ function renderReport() {
       </div>`;
   });
 
-  // Если ни у кого нет данных за этот месяц — показываем осмысленную заглушку
   if (renderedPlayers === 0) {
     html += `
       <div class="card">
         <div class="empty-state">
           <div class="big">📄</div>
-          <p>За «${escapeHtml(monthLabelFromKey(month))}» тренировок нет.<br>
-          Назначьте их в «Календаре тренера» — отчёт появится автоматически.</p>
+          <p>За «${escapeHtml(monthLabelFromKey(month))}» данных нет.<br>
+          Назначьте тренировки в «Календаре тренера» и отметьте факт — отчёт появится автоматически.</p>
         </div>
       </div>`;
   }
 
   content.innerHTML = html;
 }
-
-/* ---------- Экспорт в PDF ---------- */
 
 async function exportReportToPDF() {
   const content = document.getElementById('report-content');
@@ -194,11 +195,4 @@ async function exportReportToPDF() {
     orientation: 'p',
     hideSelectors: ['.no-print']
   });
-}
-
-/* ---------- Хелпер: метка месяца по ключу YYYY-MM ---------- */
-
-function monthLabelFromKey(ym) {
-  const [y, m] = ym.split('-').map(Number);
-  return `${MONTH_NAMES_RU[m - 1]} ${y}`;
 }

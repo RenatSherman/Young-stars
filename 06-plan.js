@@ -1,12 +1,9 @@
 /* ============================================================
    06-plan.js
-   План развития игрока:
-   - таблица целей: Навык / Текущая / Цель / Срок / Комплекс(ы) / Факт / Комментарий
-   - навык — из techDetail + otherDetail
-   - текущая оценка — автоматически (start)
-   - комплексы — мультивыбор из DB.exercises (popover как нативный select)
-   - факт: — / Выполнено / Частично / Не выполнено (+ обязательный комментарий)
-   - нижняя панель: сводка по целям
+   План развития игрока + хелперы факта для календаря игрока.
+
+   Факт (done/partial/notdone) хранится в блоке календаря игрока:
+     DB.players[i].calendar[date][sessIdx].blocks[blockIdx].fact
    ============================================================ */
 
 /* ---------- Хелперы навыков ---------- */
@@ -294,7 +291,6 @@ let __devPopoverState = { pid: null, idx: null };
 function toggleDevComplexesPopover(event, pid, idx) {
   if (event) event.stopPropagation();
 
-  // Если уже открыт этот же — закрыть
   const existing = document.getElementById('dev-pop-global');
   if (existing && __devPopoverState.pid === pid && __devPopoverState.idx === idx) {
     closeDevComplexesPopover();
@@ -309,13 +305,11 @@ function toggleDevComplexesPopover(event, pid, idx) {
   if (!g) return;
   const complexes = Array.isArray(g.complexes) ? g.complexes : [];
 
-  // Кнопка — якорь
   const cell = document.getElementById('dev-cell-' + idx);
   const btn = cell ? cell.querySelector('.dev-complexes-btn') : null;
   if (!btn) return;
   const rect = btn.getBoundingClientRect();
 
-  // Создаём поповер в body
   const pop = document.createElement('div');
   pop.className = 'cc-popover cc-popover-fixed';
   pop.id = 'dev-pop-global';
@@ -350,7 +344,6 @@ function toggleDevComplexesPopover(event, pid, idx) {
   `;
   document.body.appendChild(pop);
 
-  // Позиционирование
   const popW = 340;
   const popH = pop.offsetHeight || 380;
   const margin = 8;
@@ -360,15 +353,12 @@ function toggleDevComplexesPopover(event, pid, idx) {
   let left = rect.left;
   let top = rect.bottom + 6;
 
-  // Не вылезать справа
   if (left + popW + margin > viewportW) left = viewportW - popW - margin;
   if (left < margin) left = margin;
 
-  // Если снизу мало места — открыть вверх
   if (top + popH + margin > viewportH && rect.top - popH - 6 > margin) {
     top = rect.top - popH - 6;
   }
-  // Если всё равно не влезает — прижать к низу
   if (top + popH + margin > viewportH) {
     top = Math.max(margin, viewportH - popH - margin);
   }
@@ -377,7 +367,6 @@ function toggleDevComplexesPopover(event, pid, idx) {
   pop.style.top = top + 'px';
   pop.style.width = popW + 'px';
 
-  // Автофокус на поиске + сброс фильтра
   const search = pop.querySelector('.cc-popover-search');
   if (search) {
     search.value = '';
@@ -385,7 +374,6 @@ function toggleDevComplexesPopover(event, pid, idx) {
     setTimeout(() => search.focus(), 20);
   }
 
-  // Закрытие по клику вне и по Escape
   setTimeout(() => {
     document.addEventListener('click', onDocClickCloseDevPopover);
     document.addEventListener('keydown', onEscCloseDevPopover);
@@ -484,7 +472,7 @@ function onDevComplexToggle(groupName, checked) {
   updateDevComplexesButton();
 }
 
-/* ---------- Сводка ---------- */
+/* ---------- Сводка по целям ---------- */
 
 function computeDevelopmentStats(p) {
   const plans = (p && p.developmentPlans) ? p.developmentPlans : [];
@@ -523,4 +511,23 @@ function renderDevelopmentSummaryBlock(stats) {
         <div class="val">${stats.completion}%</div>
       </div>
     </div>`;
+}
+
+/* ============================================================
+   ОБЩИЙ ХЕЛПЕР ФАКТА ДЛЯ БЛОКА КАЛЕНДАРЯ
+   Используется в карточке игрока (вкладка «Календарь») и может
+   пригодиться в других местах.
+   ============================================================ */
+
+function saveBlockFact(playerId, dateStr, sessionId, blockIndex, fact, comment) {
+  const p = DB.players.find(x => x.id === playerId);
+  if (!p || !p.calendar || !p.calendar[dateStr]) return false;
+  const sess = p.calendar[dateStr].find(x => x.id === sessionId);
+  if (!sess || !Array.isArray(sess.blocks)) return false;
+  const b = sess.blocks[blockIndex];
+  if (!b) return false;
+  b.fact = fact || '';
+  b.comment = (comment || '').trim();
+  saveDB();
+  return true;
 }
