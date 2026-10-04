@@ -1,64 +1,20 @@
 /* ============================================================
    07-calendar.js
-   Календарь игрока (список тренировок по дням) + справочник.
-   Загружается после 06-plan.js.
+   Справочник упражнений:
+   - список групп-блоков (аккордеон)
+   - упражнения внутри каждой группы раскрываются по клику
+   - по умолчанию все группы свёрнуты
+   - можно добавить/удалить группу и упражнения, ссылки на видео
    ============================================================ */
 
-/* ===== Календарь игрока ===== */
-function renderCalendar(p) {
-  return `<div class="card">
-    <h2>Календарь игрока</h2>
-    <p class="subtitle" style="margin-top:-8px">Тренировки назначаются в «Календаре тренера».</p>
-    <div id="player-calendar-content"></div>
-  </div>`;
-}
-
-function renderCalendarGrid(p) {
-  const el = document.getElementById('player-calendar-content');
-  if (!el || !p) return;
-
-  if (!p.calendar || !Object.keys(p.calendar).length) {
-    el.innerHTML = '<p class="subtitle">Пока нет тренировок.</p>';
-    return;
-  }
-
-  const dates = Object.keys(p.calendar).sort();
-  let html = '<div class="player-cal-list">';
-
-  dates.forEach(date => {
-    const day = p.calendar[date];
-    if (!Array.isArray(day) || !day.length) return;
-
-    html += `<div class="player-cal-day">
-      <div class="player-cal-date">${formatDateFull(date)}</div>
-      <div class="player-cal-sessions">`;
-
-    day.forEach((sess, idx) => {
-      const wt = (sess.workTypes || []).join(', ');
-      html += `<div class="player-cal-session">
-        <div class="pcs-time">${escapeHtml(sess.timeStart || '')}–${escapeHtml(sess.timeEnd || '')}</div>
-        <div class="pcs-name">${escapeHtml(sess.name || sess.block || '')}</div>
-        <div class="pcs-wt">${escapeHtml(wt)}</div>
-        ${sess.note ? `<div class="pcs-note">${escapeHtml(sess.note)}</div>` : ''}
-      </div>`;
-    });
-
-    html += `</div></div>`;
-  });
-
-  html += '</div>';
-  el.innerHTML = html;
-}
-
-/* ============================================================
-   СПРАВОЧНИК УПРАЖНЕНИЙ
-   ============================================================ */
+/* ===== Список групп-блоков (аккордеон) ===== */
 
 function renderExercises() {
   const el = document.getElementById('exercises-list');
   if (!el) return;
+
   if (!DB.exercises.length) {
-    el.innerHTML = '<div class="empty-state"><div class="big">📋</div><p>Справочник пуст.</p></div>';
+    el.innerHTML = '<div class="empty-state"><div class="big">📋</div><p>Справочник пуст.<br>Нажмите «+ Новая группа», чтобы создать первый блок упражнений.</p></div>';
     updateToggleAllBtn();
     return;
   }
@@ -71,7 +27,7 @@ function renderExercises() {
         <button class="accordion-header" onclick="toggleAccordion('${g.id}')">
           <span class="title-wrap">
             <span class="arrow">▶</span>
-            <span>${escapeHtml(g.group)}</span>
+            <span class="acc-name">${escapeHtml(g.group)}</span>
             <span class="count">${itemCount} ${plural(itemCount, 'упражнение', 'упражнения', 'упражнений')}</span>
           </span>
           <span class="group-actions no-print" onclick="event.stopPropagation()">
@@ -87,14 +43,14 @@ function renderExercises() {
                 <span class="num">${i + 1}.</span>
                 <span class="txt" contenteditable="true" onblur="renameExercise('${g.id}', ${i}, this.innerText)">${escapeHtml(it)}</span>
                 ${link
-                  ? `<a href="${escapeAttr(link)}" target="_blank">▶ смотреть</a>`
-                  : `<a href="#" onclick="editExerciseLink('${g.id}',${i});return false">🔗 видео</a>`}
+                  ? `<a href="${escapeAttr(link)}" target="_blank" rel="noopener">▶ видео</a>`
+                  : `<a href="#" onclick="editExerciseLink('${g.id}',${i});return false">🔗 добавить</a>`}
                 <span class="item-actions no-print">
                   <button class="btn-icon" title="Редактировать ссылку" onclick="editExerciseLink('${g.id}',${i})">✎</button>
                   <button class="btn-icon red" title="Удалить" onclick="deleteExercise('${g.id}',${i})">×</button>
                 </span>
               </div>`;
-            }).join('') : '<div class="accordion-empty">В группе пока нет упражнений</div>'}
+            }).join('') : '<div class="accordion-empty">В этой группе пока нет упражнений</div>'}
           </div>
           <div class="accordion-footer no-print">
             <button class="btn btn-sm" onclick="addExercise('${g.id}')">+ Добавить упражнение</button>
@@ -133,6 +89,8 @@ function updateToggleAllBtn() {
   btn.textContent = allOpen ? 'Свернуть все' : 'Развернуть все';
 }
 
+/* ===== Создание / удаление группы ===== */
+
 function addGroup() {
   openModal(`<h3>Новая группа упражнений</h3>
     <div class="field"><label>Название группы</label>
@@ -153,7 +111,9 @@ function saveNewGroup() {
   const id = 'ex_' + Date.now();
   DB.exercises.push({ id, group: name, items: [], links: {} });
   openAccordions.add(id);
-  saveDB(); closeModal(); renderExercises();
+  saveDB();
+  closeModal();
+  renderExercises();
 }
 
 function deleteGroup(gid) {
@@ -162,8 +122,11 @@ function deleteGroup(gid) {
   if (!confirm(`Удалить группу «${g.group}» со всеми упражнениями?`)) return;
   DB.exercises = DB.exercises.filter(x => x.id !== gid);
   openAccordions.delete(gid);
-  saveDB(); renderExercises();
+  saveDB();
+  renderExercises();
 }
+
+/* ===== Упражнения ===== */
 
 function addExercise(groupId) {
   const g = groupId ? DB.exercises.find(x => x.id === groupId) : null;
@@ -202,13 +165,15 @@ function saveNewExercise(groupId) {
   if (link) g.links[g.items.length - 1] = link;
 
   openAccordions.add(g.id);
-  saveDB(); closeModal(); renderExercises();
+  saveDB();
+  closeModal();
+  renderExercises();
 }
 
 function renameExercise(gid, idx, newName) {
   const g = DB.exercises.find(x => x.id === gid);
   if (!g) return;
-  newName = newName.trim();
+  newName = (newName || '').trim();
   if (!newName || newName === g.items[idx]) return;
   g.items[idx] = newName;
   saveDB();
@@ -217,7 +182,8 @@ function renameExercise(gid, idx, newName) {
 function deleteExercise(gid, idx) {
   const g = DB.exercises.find(x => x.id === gid);
   if (!g) return;
-  if (!confirm(`Удалить упражнение «${g.items[idx].substring(0, 60)}...»?`)) return;
+  const label = (g.items[idx] || '').substring(0, 60);
+  if (!confirm(`Удалить упражнение «${label}${label.length >= 60 ? '…' : ''}»?`)) return;
 
   g.items.splice(idx, 1);
   if (g.links) {
@@ -229,15 +195,18 @@ function deleteExercise(gid, idx) {
     });
     g.links = newLinks;
   }
-  saveDB(); renderExercises();
+  saveDB();
+  renderExercises();
 }
+
+/* ===== Ссылки на видео ===== */
 
 function editExerciseLink(gid, idx) {
   const g = DB.exercises.find(x => x.id === gid);
   if (!g) return;
   const cur = (g.links && g.links[idx]) || '';
   openModal(`<h3>Ссылка на видео</h3>
-    <p style="color:var(--ak-gray-dark);font-size:13px;margin-bottom:12px">${escapeHtml(g.items[idx])}</p>
+    <p style="color:var(--ak-gray-dark);font-size:13px;margin-bottom:12px">${escapeHtml(g.items[idx] || '')}</p>
     <div class="field"><label>URL</label>
       <input id="ex-link" value="${escapeAttr(cur)}" placeholder="https://..." autofocus></div>
     <div class="btn-row" style="margin-top:16px">
@@ -250,13 +219,21 @@ function editExerciseLink(gid, idx) {
 
 function saveExerciseLink(gid, idx) {
   const g = DB.exercises.find(x => x.id === gid);
+  if (!g) return;
   if (!g.links) g.links = {};
-  g.links[idx] = document.getElementById('ex-link').value.trim();
-  saveDB(); closeModal(); renderExercises();
+  const url = document.getElementById('ex-link').value.trim();
+  if (url) g.links[idx] = url;
+  else delete g.links[idx];
+  saveDB();
+  closeModal();
+  renderExercises();
 }
 
 function deleteExerciseLink(gid, idx) {
   const g = DB.exercises.find(x => x.id === gid);
+  if (!g) return;
   if (g.links) delete g.links[idx];
-  saveDB(); closeModal(); renderExercises();
+  saveDB();
+  closeModal();
+  renderExercises();
 }

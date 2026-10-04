@@ -1,6 +1,7 @@
 /* ============================================================
    styles-01-base.css
-   Токены, сброс, типографика, шапка, кнопки, карточки, вкладки.
+   Токены, сброс, типографика, шапка, кнопки, карточки, вкладки,
+   справочник упражнений (аккордеон).
 
    Разбиение styles.css:
      styles-01-base.css      ← этот файл
@@ -509,3 +510,197 @@ input.cell[type=number]{text-align:center}
   font-family:var(--font-body);
   color:var(--ak-text);
 }
+
+/* ============================================================
+   СПРАВОЧНИК УПРАЖНЕНИЙ (аккордеон)
+   ============================================================ */
+
+.accordion{
+  margin-bottom:12px;
+  border-radius:8px;
+  overflow:hidden;
+  box-shadow:var(--shadow);
+  background:#fff;
+  border-left:5px solid var(--ak-green);
+  transition:.2s;
+}
+.accordion:hover{
+  box-shadow:var(--shadow-lg);
+}
+
+.accordion-header{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  padding:14px 20px;
+  cursor:pointer;
+  transition:.15s;
+  background:#fff;
+  border:none;
+  width:100%;
+  text-align:left;
+  font-family:var(--font-display);
+  font-size:14px;
+  font-weight:900;
+  color:var(--ak-green);
+  letter-spacing:.5px;
+  text-transform:uppercase;
+}
+.accordion-header:hover{
+  background:var(--ak-gray-light);
+}
+.accordion.open .accordion-header{
+  background:var(--ak-green);
+  color:#fff;
+}
+
+.accordion-header .title-wrap{
+  display:flex;
+  align-items:center;
+  gap:12px;
+  flex:1;
+  min-width:0;
+}
+.accordion-header .arrow{
+  transition:transform .25s;
+  font-size:12px;
+  color:var(--ak-red);
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  width:24px;
+  height:24px;
+  border-radius:50%;
+  background:rgba(200,16,46,.1);
+  flex-shrink:0;
+}
+.accordion.open .accordion-header .arrow{
+  transform:rotate(90deg);
+  background:rgba(255,255,255,.2);
+  color:#fff;
+}
+.accordion-header .acc-name{
+  flex:1;
+  min-width:0;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.accordion-header .count{
+  font-size:10px;
+  font-weight:900;
+  padding:3px 10px;
+  border-radius:20px;
+  background:var(--ak-gray-light);
+  color:var(--ak-gray-dark);
+  white-space:nowrap;
+  font-family:var(--font-display);
+  letter-spacing:.3px;
+}
+.accordion.open .accordion-header .count{
+  background:rgba(255,255,255,.2);
+  color:#fff;
+}
+.accordion-header .group-actions{
+  display:flex;
+  gap:2px;
+  opacity:0;
+  transition:.15s;
+}
+.accordion-header:hover .group-actions{opacity:1}
+.accordion.open .accordion-header .group-actions .btn-icon{color:#fff}
+.accordion.open .accordion-header .group-actions .btn-icon:hover{background:rgba(255,255,255,.2)}
+
+.accordion-body{
+  max-height:0;
+  overflow:hidden;
+  transition:max-height .35s ease;
+}
+.accordion.open .accordion-body{
+  max-height:4000px;
+}
+
+.accordion-inner{
+  padding:14px 16px 8px 16px;
+  background:#fff;
+}
+.accordion-footer{
+  padding:12px 16px;
+  border-top:1px solid var(--ak-gray-mid);
+  background:#fafbfc;
+  display:flex;
+  justify-content:flex-start;
+}
+.accordion-footer .btn{
+  font-size:11px;
+  padding:6px 14px;
+}
+.accordion-empty{
+  padding:16px;
+  text-align:center;
+  color:var(--ak-gray-dark);
+  font-size:13px;
+  background:var(--ak-gray-light);
+  border-radius:4px;
+  margin:8px 0;
+}
+
+/* Пункт упражнения */
+.ex-item{
+  display:flex;
+  align-items:center;
+  gap:12px;
+  padding:10px 12px;
+  background:var(--ak-gray-light);
+  border-radius:4px;
+  margin-bottom:6px;
+  transition:.15s;
+  border-left:3px solid transparent;
+}
+.ex-item:hover{
+  background:#eef0f2;
+  border-left-color:var(--ak-green);
+}
+.ex-item .num{
+  font-weight:900;
+  color:var(--ak-red);
+  min-width:28px;
+  font-size:12px;
+  font-family:var(--font-display);
+}
+.ex-item .txt{
+  flex:1;
+  cursor:text;
+  padding:2px 4px;
+  border-radius:3px;
+  font-size:13px;
+  min-width:0;
+}
+.ex-item .txt:hover{background:#fff}
+.ex-item .txt:focus{
+  outline:none;
+  background:#fff;
+  border:1px solid var(--ak-green);
+}
+.ex-item a{
+  color:var(--ak-red);
+  font-weight:900;
+  font-size:11px;
+  text-decoration:none;
+  white-space:nowrap;
+  display:inline-flex;
+  align-items:center;
+  gap:4px;
+  font-family:var(--font-display);
+  letter-spacing:.3px;
+  text-transform:uppercase;
+}
+.ex-item a:hover{text-decoration:underline}
+.ex-item .item-actions{
+  display:flex;
+  gap:2px;
+  opacity:0;
+  transition:.15s;
+}
+.ex-item:hover .item-actions{opacity:1}
