@@ -1,14 +1,8 @@
 /* ============================================================
    styles-01-base.css
    Токены, сброс, типографика, шапка, кнопки, карточки, вкладки,
-   справочник упражнений (аккордеон).
-
-   Разбиение styles.css:
-     styles-01-base.css      ← этот файл
-     styles-02-players.css   — игроки, паспорт, радары, дашборд
-     styles-03-calendar.css  — календари, план развития, поповеры
-     styles-04-modal.css     — модалки, групповой выбор, авторизация
-     styles-05-reports.css   — отчёты, адаптив, печать
+   справочник упражнений (аккордеон),
+   дерево навыков в карточке игрока (.sk-*).
    ============================================================ */
 
 :root{
@@ -322,7 +316,6 @@ h3{
 }
 .card.red-top{border-top-color:var(--ak-red)}
 
-/* ===== FLEX-УТИЛИТЫ ===== */
 .flex-between{
   display:flex;
   justify-content:space-between;
@@ -332,7 +325,7 @@ h3{
 }
 .mt-16{margin-top:16px}
 
-/* ===== ПОЛЯ ФОРМ ===== */
+/* ===== ПОЛЯ ===== */
 .field{display:flex;flex-direction:column;gap:2px}
 .field label{
   font-size:10px;
@@ -407,7 +400,7 @@ h3{
 .tab-content{display:none}
 .tab-content.active{display:block}
 
-/* ===== ТАБЛИЦЫ (общие) ===== */
+/* ===== ТАБЛИЦЫ ===== */
 table{width:100%;border-collapse:collapse;font-size:13px}
 thead th{
   background:var(--ak-green);
@@ -462,7 +455,6 @@ input.cell[type=number]{text-align:center}
 .editable-name:hover{background:var(--ak-gray-light)}
 .editable-name:focus{outline:none;background:#fff;border:1px solid var(--ak-green)}
 
-/* ===== ПУСТОЕ СОСТОЯНИЕ ===== */
 .empty-state{
   text-align:center;
   padding:40px;
@@ -474,7 +466,6 @@ input.cell[type=number]{text-align:center}
   opacity:.25;
 }
 
-/* ===== DANGER-BOX ===== */
 .danger-box{
   background:#fce8ec;
   border-left:5px solid var(--ak-red);
@@ -495,11 +486,9 @@ input.cell[type=number]{text-align:center}
 .danger-box ul{margin:8px 0 12px 20px;font-size:13px;color:var(--ak-text)}
 .danger-box li{margin-bottom:4px}
 
-/* ===== ГРАФИКИ (общая обёртка) ===== */
 .chart-box{position:relative;height:280px;margin-bottom:20px}
 .chart-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:20px}
 
-/* ===== PDF-СТЕЙДЖ ===== */
 #pdf-stage{
   position:fixed;
   left:-99999px;
@@ -524,9 +513,7 @@ input.cell[type=number]{text-align:center}
   border-left:5px solid var(--ak-green);
   transition:.2s;
 }
-.accordion:hover{
-  box-shadow:var(--shadow-lg);
-}
+.accordion:hover{box-shadow:var(--shadow-lg)}
 
 .accordion-header{
   display:flex;
@@ -547,13 +534,8 @@ input.cell[type=number]{text-align:center}
   letter-spacing:.5px;
   text-transform:uppercase;
 }
-.accordion-header:hover{
-  background:var(--ak-gray-light);
-}
-.accordion.open .accordion-header{
-  background:var(--ak-green);
-  color:#fff;
-}
+.accordion-header:hover{background:var(--ak-gray-light)}
+.accordion.open .accordion-header{background:var(--ak-green);color:#fff}
 
 .accordion-header .title-wrap{
   display:flex;
@@ -602,12 +584,7 @@ input.cell[type=number]{text-align:center}
   background:rgba(255,255,255,.2);
   color:#fff;
 }
-.accordion-header .group-actions{
-  display:flex;
-  gap:2px;
-  opacity:0;
-  transition:.15s;
-}
+.accordion-header .group-actions{display:flex;gap:2px;opacity:0;transition:.15s}
 .accordion-header:hover .group-actions{opacity:1}
 .accordion.open .accordion-header .group-actions .btn-icon{color:#fff}
 .accordion.open .accordion-header .group-actions .btn-icon:hover{background:rgba(255,255,255,.2)}
@@ -617,14 +594,8 @@ input.cell[type=number]{text-align:center}
   overflow:hidden;
   transition:max-height .35s ease;
 }
-.accordion.open .accordion-body{
-  max-height:4000px;
-}
-
-.accordion-inner{
-  padding:14px 16px 8px 16px;
-  background:#fff;
-}
+.accordion.open .accordion-body{max-height:4000px}
+.accordion-inner{padding:14px 16px 8px 16px;background:#fff}
 .accordion-footer{
   padding:12px 16px;
   border-top:1px solid var(--ak-gray-mid);
@@ -632,10 +603,7 @@ input.cell[type=number]{text-align:center}
   display:flex;
   justify-content:flex-start;
 }
-.accordion-footer .btn{
-  font-size:11px;
-  padding:6px 14px;
-}
+.accordion-footer .btn{font-size:11px;padding:6px 14px}
 .accordion-empty{
   padding:16px;
   text-align:center;
@@ -646,7 +614,6 @@ input.cell[type=number]{text-align:center}
   margin:8px 0;
 }
 
-/* Пункт упражнения */
 .ex-item{
   display:flex;
   align-items:center;
@@ -658,10 +625,7 @@ input.cell[type=number]{text-align:center}
   transition:.15s;
   border-left:3px solid transparent;
 }
-.ex-item:hover{
-  background:#eef0f2;
-  border-left-color:var(--ak-green);
-}
+.ex-item:hover{background:#eef0f2;border-left-color:var(--ak-green)}
 .ex-item .num{
   font-weight:900;
   color:var(--ak-red);
@@ -678,11 +642,7 @@ input.cell[type=number]{text-align:center}
   min-width:0;
 }
 .ex-item .txt:hover{background:#fff}
-.ex-item .txt:focus{
-  outline:none;
-  background:#fff;
-  border:1px solid var(--ak-green);
-}
+.ex-item .txt:focus{outline:none;background:#fff;border:1px solid var(--ak-green)}
 .ex-item a{
   color:var(--ak-red);
   font-weight:900;
@@ -697,10 +657,179 @@ input.cell[type=number]{text-align:center}
   text-transform:uppercase;
 }
 .ex-item a:hover{text-decoration:underline}
-.ex-item .item-actions{
-  display:flex;
-  gap:2px;
-  opacity:0;
+.ex-item .item-actions{display:flex;gap:2px;opacity:0;transition:.15s}
+.ex-item:hover .item-actions{opacity:1}
+
+/* ============================================================
+   ДЕРЕВО НАВЫКОВ (карточка игрока) — .sk-*
+   ============================================================ */
+
+.skills-tree{display:flex;flex-direction:column;gap:10px}
+
+.sk-acc{
+  border-radius:6px;
+  overflow:hidden;
+  background:#fff;
+  border-left:4px solid var(--ak-green);
+  box-shadow:var(--shadow);
   transition:.15s;
 }
-.ex-item:hover .item-actions{opacity:1}
+.sk-acc.level-2{border-left-color:var(--ak-red)}
+.sk-acc:hover{box-shadow:var(--shadow-lg)}
+
+.sk-acc-head{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  width:100%;
+  padding:12px 16px;
+  background:var(--ak-gray-light);
+  border:none;
+  cursor:pointer;
+  text-align:left;
+  font-family:var(--font-display);
+  font-size:13px;
+  font-weight:900;
+  color:var(--ak-green);
+  letter-spacing:.4px;
+  text-transform:uppercase;
+  transition:.15s;
+}
+.sk-acc.level-2 .sk-acc-head{
+  font-size:12px;
+  padding:10px 14px 10px 26px;
+  background:#fff;
+  color:var(--ak-gray-dark);
+  border-bottom:1px solid var(--ak-gray-mid);
+}
+.sk-acc-head:hover{background:var(--ak-gray-mid)}
+.sk-acc.level-2 .sk-acc-head:hover{background:var(--ak-gray-light)}
+
+.sk-acc.open > .sk-acc-head{
+  background:var(--ak-green);
+  color:#fff;
+}
+.sk-acc.level-2.open > .sk-acc-head{
+  background:var(--ak-red);
+  color:#fff;
+  border-bottom-color:var(--ak-red);
+}
+
+.sk-acc-arrow{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  width:20px;
+  height:20px;
+  border-radius:50%;
+  background:rgba(21,71,52,.1);
+  color:var(--ak-green);
+  font-size:10px;
+  flex-shrink:0;
+  transition:transform .25s;
+}
+.sk-acc.level-2 .sk-acc-arrow{
+  background:rgba(200,16,46,.1);
+  color:var(--ak-red);
+}
+.sk-acc.open > .sk-acc-head .sk-acc-arrow{
+  transform:rotate(90deg);
+  background:rgba(255,255,255,.2);
+  color:#fff;
+}
+.sk-acc-title{
+  flex:1;
+  min-width:0;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.sk-acc-count{
+  font-size:10px;
+  font-weight:900;
+  padding:3px 10px;
+  border-radius:20px;
+  background:#fff;
+  color:var(--ak-gray-dark);
+  white-space:nowrap;
+  font-family:var(--font-display);
+  letter-spacing:.3px;
+}
+.sk-acc.open > .sk-acc-head .sk-acc-count{
+  background:rgba(255,255,255,.2);
+  color:#fff;
+}
+
+.sk-acc-body{
+  max-height:0;
+  overflow:hidden;
+  transition:max-height .35s ease;
+}
+.sk-acc.open > .sk-acc-body{max-height:20000px}
+.sk-acc-inner{
+  padding:12px 14px 14px 14px;
+  background:#fff;
+}
+
+.sk-empty{
+  padding:14px;
+  text-align:center;
+  color:var(--ak-gray-dark);
+  font-size:12px;
+  background:var(--ak-gray-light);
+  border-radius:4px;
+}
+
+/* Таблица внутри навыков */
+.sk-table-wrap{
+  overflow-x:auto;
+  border-radius:6px;
+  border:1px solid var(--ak-gray-mid);
+}
+.sk-table{
+  width:100%;
+  border-collapse:collapse;
+  font-size:13px;
+}
+.sk-table thead th{
+  background:var(--ak-gray-light);
+  color:var(--ak-green);
+  padding:8px 10px;
+  text-align:left;
+  font-weight:900;
+  font-size:10px;
+  text-transform:uppercase;
+  letter-spacing:.5px;
+  font-family:var(--font-display);
+  border-bottom:1px solid var(--ak-gray-mid);
+}
+.sk-table tbody td{
+  padding:6px 10px;
+  border-bottom:1px solid var(--ak-gray-mid);
+  vertical-align:middle;
+}
+.sk-table tbody tr:last-child td{border-bottom:none}
+.sk-table tbody tr:hover{background:var(--ak-gray-light)}
+.sk-table .sk-sub{
+  font-size:11px;
+  color:var(--ak-gray-dark);
+  font-weight:700;
+  font-family:var(--font-display);
+  letter-spacing:.3px;
+  text-transform:uppercase;
+  margin-bottom:2px;
+}
+.sk-table .sk-cell{
+  width:64px;
+  text-align:center;
+  border:1px solid var(--ak-gray-mid);
+  background:#fff;
+  padding:5px 6px;
+  border-radius:4px;
+  font-size:13px;
+}
+.sk-table .sk-cell:focus{
+  outline:none;
+  border-color:var(--ak-green);
+  box-shadow:0 0 0 2px rgba(21,71,52,.12);
+}

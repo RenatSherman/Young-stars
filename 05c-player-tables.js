@@ -1,22 +1,273 @@
 /* ============================================================
    05c-player-tables.js
    Таблицы и графики карточки игрока:
-   - «Техника» (start / mid / end)
-   - «Физ / Такт / Псих» (start / plan / fact — в UI Начало/Середина/Конец)
+   - вкладка «Навыки» — дерево аккордеонов:
+       * ТЕХНИЧЕСКИЕ (подразделы-аккордеоны → таблица)
+       * ФИЗИЧЕСКИЕ (таблица)
+       * ТАКТИЧЕСКИЕ (таблица)
+       * ПСИХОЛОГИЧЕСКИЕ (таблица)
    - «Статистика»
-   - «Тесты» (с переименованием столбцов)
+   - «Тесты»
    - «Графики тестов»
-   - загрузка фото игрока
+   - загрузка фото
    - дефолтные наборы критериев
 
-   Разбиение 05-player.js:
-     05a-player-core.js       — ядро карточки (создан)
-     05b-player-calendar.js   — календарь игрока (создан)
-     05c-player-tables.js     ← этот файл
+   Данные не меняются: techDetail / otherDetail как были.
    ============================================================ */
 
 /* ============================================================
-   ТЕХНИКА
+   ВКЛАДКА «НАВЫКИ» — дерево аккордеонов
+   ============================================================ */
+
+const SKILLS_OPEN = new Set(); // id раскрытых аккордеонов вида "tech", "tech:Катание", "phys", "tact", "psih"
+
+function renderSkillsTab(p) {
+  return `<div class="card">
+    <div class="flex-between" style="margin-bottom:12px">
+      <div>
+        <h2 style="margin-bottom:4px">Навыки</h2>
+        <p class="subtitle" style="margin:0">Оценки по разделам. Нажмите на раздел, чтобы раскрыть.</p>
+      </div>
+      <div class="btn-row no-print" style="margin:0">
+        <button class="btn btn-sm btn-ghost" id="skills-toggle-all-btn" onclick="toggleAllSkillsAccordions('${p.id}')">Развернуть все</button>
+      </div>
+    </div>
+    <div id="skills-content"></div>
+  </div>`;
+}
+
+function renderSkillsContent(p) {
+  const el = document.getElementById('skills-content');
+  if (!el) return;
+
+  // Технические: группируем по подразделам
+  const techGroups = groupBy(p.techDetail || [], 'sub');
+
+  // Физ/Такт/Псих: группируем по разделу (там group уже раздел, sub — подраздел)
+  const otherByGroup = groupBy(p.otherDetail || [], 'group');
+
+  const techCount   = (p.techDetail || []).length;
+  const physCount   = ((otherByGroup['Физические качества']) || []).length;
+  const tactCount   = ((otherByGroup['Тактические навыки']) || []).length;
+  const psihCount   = ((otherByGroup['Психологические характеристики']) || []).length;
+
+  const html = `
+    <div class="skills-tree">
+      ${renderSkillAccordion({
+        id: 'tech',
+        title: 'Технические',
+        count: techCount,
+        body: renderTechSubtree(p, techGroups)
+      })}
+
+      ${renderSkillAccordion({
+        id: 'phys',
+        title: 'Физические',
+        count: physCount,
+        body: physCount
+          ? renderFlatTable(otherByGroup['Физические качества'], p.id, 'phys')
+          : '<div class="sk-empty">Нет критериев в этом разделе</div>'
+      })}
+
+      ${renderSkillAccordion({
+        id: 'tact',
+        title: 'Тактические',
+        count: tactCount,
+        body: tactCount
+          ? renderFlatTable(otherByGroup['Тактические навыки'], p.id, 'tact')
+          : '<div class="sk-empty">Нет критериев в этом разделе</div>'
+      })}
+
+      ${renderSkillAccordion({
+        id: 'psih',
+        title: 'Психологические',
+        count: psihCount,
+        body: psihCount
+          ? renderFlatTable(otherByGroup['Психологические характеристики'], p.id, 'psih')
+          : '<div class="sk-empty">Нет критериев в этом разделе</div>'
+      })}
+    </div>
+  `;
+
+  el.innerHTML = html;
+  updateSkillsToggleAllBtn(p);
+}
+
+/* Вспомогательный: группировка массива по полю */
+function groupBy(arr, field) {
+  const out = {};
+  arr.forEach(r => {
+    const k = r[field] || '';
+    if (!out[k]) out[k] = [];
+    out[k].push(r);
+  });
+  return out;
+}
+
+/* Универсальный рендер аккордеона */
+function renderSkillAccordion({ id, title, count, body, level = 1 }) {
+  const isOpen = SKILLS_OPEN.has(id);
+  const levelCls = 'sk-level-' + level;
+  return `<div class="sk-acc ${levelCls} ${isOpen ? 'open' : ''}" data-sk-id="${escapeAttr(id)}">
+    <button type="button" class="sk-acc-head" onclick="toggleSkillsAccordion('${escapeAttr(id)}')">
+      <span class="sk-acc-arrow">▶</span>
+      <span class="sk-acc-title">${escapeHtml(title)}</span>
+      <span class="sk-acc-count">${count}</span>
+    </button>
+    <div class="sk-acc-body">
+      <div class="sk-acc-inner">${body}</div>
+    </div>
+  </div>`;
+}
+
+/* Вложенное дерево для «Технических»: подразделы-аккордеоны */
+function renderTechSubtree(p, techGroups) {
+  const subNames = Object.keys(techGroups);
+  if (!subNames.length) return '<div class="sk-empty">Нет критериев в этом разделе</div>';
+
+  return subNames.map(subName => {
+    const rows = techGroups[subName];
+    const id = 'tech:' + subName;
+    const table = renderGroupedTechTable(rows, p.id, subName);
+    return renderSkillAccordion({
+      id,
+      title: subName,
+      count: rows.length,
+      body: table,
+      level: 2
+    });
+  }).join('');
+}
+
+/* Таблица для группы «Техники» (внутри подраздела).
+   Внутри подраздела может быть несколько подгрупп sub — но так как мы уже
+   отфильтровали по sub, все строки одного подраздела. */
+function renderGroupedTechTable(rows, pid, subName) {
+  if (!rows.length) return '<div class="sk-empty">Пусто</div>';
+
+  const html = rows.map((r, i) => {
+    // Индекс в исходном массиве techDetail
+    const globalIdx = findTechIndex(pid, r);
+    return `<tr>
+      <td style="text-align:center;color:var(--ak-gray-dark);font-weight:900;font-family:var(--font-display)">${i + 1}</td>
+      <td><span class="editable-name" contenteditable="true" onblur="updateTechName('${pid}',${globalIdx},'name',this.innerText)">${escapeHtml(r.name)}</span></td>
+      <td><input class="cell sk-cell" type="number" min="1" max="10" value="${r.start ?? ''}" onchange="updateTech('${pid}',${globalIdx},'start',this.value)"></td>
+      <td><input class="cell sk-cell" type="number" min="1" max="10" value="${r.mid ?? ''}" onchange="updateTech('${pid}',${globalIdx},'mid',this.value)"></td>
+      <td><input class="cell sk-cell" type="number" min="1" max="10" value="${r.end ?? ''}" onchange="updateTech('${pid}',${globalIdx},'end',this.value)"></td>
+    </tr>`;
+  }).join('');
+
+  return `<div class="sk-table-wrap">
+    <table class="sk-table">
+      <thead>
+        <tr>
+          <th style="width:36px">№</th>
+          <th>Критерий</th>
+          <th style="width:84px">Начало</th>
+          <th style="width:84px">Середина</th>
+          <th style="width:84px">Конец</th>
+        </tr>
+      </thead>
+      <tbody>${html}</tbody>
+    </table>
+  </div>`;
+}
+
+/* Находим глобальный индекс строки в p.techDetail (сравнение по ссылке) */
+function findTechIndex(pid, row) {
+  const p = DB.players.find(x => x.id === pid);
+  if (!p || !p.techDetail) return -1;
+  return p.techDetail.indexOf(row);
+}
+
+/* Плоская таблица для Физ/Такт/Псих */
+function renderFlatTable(rows, pid, kind) {
+  if (!rows || !rows.length) return '<div class="sk-empty">Пусто</div>';
+
+  const html = rows.map((r, i) => {
+    const globalIdx = findOtherIndex(pid, r);
+    return `<tr>
+      <td style="text-align:center;color:var(--ak-gray-dark);font-weight:900;font-family:var(--font-display)">${i + 1}</td>
+      <td>${r.sub ? `<div class="sk-sub">${escapeHtml(r.sub)}</div>` : ''}<span class="editable-name" contenteditable="true" onblur="updateOtherName('${pid}',${globalIdx},'name',this.innerText)">${escapeHtml(r.name)}</span></td>
+      <td><input class="cell sk-cell" type="number" min="1" max="10" value="${r.start ?? ''}" onchange="updateOther('${pid}',${globalIdx},'start',this.value)"></td>
+      <td><input class="cell sk-cell" type="number" min="1" max="10" value="${r.plan ?? ''}" onchange="updateOther('${pid}',${globalIdx},'plan',this.value)"></td>
+      <td><input class="cell sk-cell" type="number" min="1" max="10" value="${r.fact ?? ''}" onchange="updateOther('${pid}',${globalIdx},'fact',this.value)"></td>
+    </tr>`;
+  }).join('');
+
+  return `<div class="sk-table-wrap">
+    <table class="sk-table">
+      <thead>
+        <tr>
+          <th style="width:36px">№</th>
+          <th>Критерий</th>
+          <th style="width:84px">Начало</th>
+          <th style="width:84px">Середина</th>
+          <th style="width:84px">Конец</th>
+        </tr>
+      </thead>
+      <tbody>${html}</tbody>
+    </table>
+  </div>`;
+}
+
+function findOtherIndex(pid, row) {
+  const p = DB.players.find(x => x.id === pid);
+  if (!p || !p.otherDetail) return -1;
+  return p.otherDetail.indexOf(row);
+}
+
+/* Открытие/закрытие */
+function toggleSkillsAccordion(id) {
+  if (SKILLS_OPEN.has(id)) SKILLS_OPEN.delete(id);
+  else SKILLS_OPEN.add(id);
+  const el = document.querySelector(`.sk-acc[data-sk-id="${CSS.escape(id)}"]`);
+  if (el) el.classList.toggle('open', SKILLS_OPEN.has(id));
+  updateSkillsToggleAllBtn(null);
+}
+
+function toggleAllSkillsAccordions(pid) {
+  const p = DB.players.find(x => x.id === pid);
+  if (!p) return;
+
+  // Собираем все id аккордеонов
+  const ids = collectAllSkillIds(p);
+  const allOpen = ids.length && ids.every(id => SKILLS_OPEN.has(id));
+
+  if (allOpen) {
+    SKILLS_OPEN.clear();
+  } else {
+    ids.forEach(id => SKILLS_OPEN.add(id));
+  }
+
+  document.querySelectorAll('.sk-acc').forEach(el => {
+    const id = el.dataset.skId;
+    el.classList.toggle('open', SKILLS_OPEN.has(id));
+  });
+
+  updateSkillsToggleAllBtn(p);
+}
+
+function collectAllSkillIds(p) {
+  const ids = ['tech', 'phys', 'tact', 'psih'];
+  (p.techDetail || []).forEach(r => {
+    if (r.sub) ids.push('tech:' + r.sub);
+  });
+  // уникализируем
+  return Array.from(new Set(ids));
+}
+
+function updateSkillsToggleAllBtn(p) {
+  const btn = document.getElementById('skills-toggle-all-btn');
+  if (!btn || !p) return;
+  const ids = collectAllSkillIds(p);
+  const allOpen = ids.length && ids.every(id => SKILLS_OPEN.has(id));
+  btn.textContent = allOpen ? 'Свернуть все' : 'Развернуть все';
+}
+
+/* ============================================================
+   СТАРЫЕ «ПЛОСКИЕ» ТАБЛИЦЫ (для PDF-экспорта и общего списка)
+   Оставлены без изменений, используются только в 08-pdf.js.
    ============================================================ */
 
 function renderTechTable(p) {
@@ -59,11 +310,6 @@ function updateTechName(pid, i, f, v) {
   p.techDetail[i][f] = v;
   saveDB();
 }
-
-/* ============================================================
-   ФИЗ / ТАКТ / ПСИХ
-   Поля данных: start / plan / fact. В UI: Начало / Середина / Конец.
-   ============================================================ */
 
 function renderOtherTable(p) {
   let rows = '', lastGroup = '', lastSub = '';
@@ -307,7 +553,7 @@ function drawTestCharts(p) {
 }
 
 /* ============================================================
-   РАДАРЫ (профиль навыков и динамика)
+   РАДАРЫ
    ============================================================ */
 
 function drawRadar(p) {
@@ -395,7 +641,7 @@ function drawRadarCompare(p) {
 }
 
 /* ============================================================
-   ФОТО ИГРОКА
+   ФОТО
    ============================================================ */
 
 function uploadPhoto(pid) {
@@ -430,7 +676,7 @@ function uploadPhoto(pid) {
 }
 
 /* ============================================================
-   ДЕФОЛТНЫЕ НАБОРЫ КРИТЕРИЕВ
+   ДЕФОЛТНЫЕ НАБОРЫ
    ============================================================ */
 
 function defaultTechDetail() {

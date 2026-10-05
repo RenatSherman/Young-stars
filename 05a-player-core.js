@@ -5,12 +5,13 @@
    - подсчёт оценок (tehn / fiz / takt / psih)
    - создание, удаление, открытие карточки
    - рендер карточки: паспорт, профили навыков, вкладки
+     (вкладка «Навыки» вместо двух: «Техника» и «Физ/Такт/Псих»)
    - общие утилиты обновления полей
 
    Разбиение 05-player.js:
      05a-player-core.js       ← этот файл
      05b-player-calendar.js   — календарь игрока
-     05c-player-tables.js     — таблицы и графики
+     05c-player-tables.js     — таблицы, графики, аккордеоны навыков
    ============================================================ */
 
 /* ===== Сохранение и загрузка ===== */
@@ -42,7 +43,7 @@ function seedDemoData() {
   saveDB();
 }
 
-/* ===== Подсчёт оценок ===== */
+/* ===== Оценки ===== */
 
 function computeScores(p, mode) {
   if (!p || !p.techDetail || !p.otherDetail) return { tehn: null, fiz: null, takt: null, psih: null };
@@ -80,7 +81,7 @@ function overallScoreEnd(p) {
   return (vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(1);
 }
 
-/* ===== Создание игрока ===== */
+/* ===== Создание ===== */
 
 function addPlayer() {
   openModal(`<h3>Новый игрок</h3>
@@ -117,7 +118,7 @@ function saveNewPlayer() {
   toast(`Игрок «${fio}» добавлен`);
 }
 
-/* ===== Удаление игрока ===== */
+/* ===== Удаление ===== */
 
 function confirmDeletePlayer(pid) {
   const p = DB.players.find(x => x.id === pid);
@@ -193,11 +194,11 @@ function doDeletePlayer(pid) {
 
 function deletePlayerFromTile(event, pid) { event.stopPropagation(); confirmDeletePlayer(pid); }
 
-/* ===== Открытие карточки игрока ===== */
+/* ===== Открытие карточки ===== */
 
 function openPlayer(id) {
   currentPlayerId = id;
-  currentTab = 'tech';
+  currentTab = 'skills';
   const p = DB.players.find(x => x.id === id);
   if (!p) return;
   currentPlanMonth = null;
@@ -206,7 +207,7 @@ function openPlayer(id) {
   renderPlayerCard(p);
 }
 
-/* ===== Рендер карточки игрока (паспорт, радары, вкладки) ===== */
+/* ===== Рендер карточки ===== */
 
 function renderPlayerCard(p) {
   const el = document.getElementById('player-card');
@@ -277,8 +278,7 @@ function renderPlayerCard(p) {
     </div>
 
     <div class="tabs no-print">
-      <button data-tab="tech" class="${currentTab === 'tech' ? 'active' : ''}">Техника</button>
-      <button data-tab="other" class="${currentTab === 'other' ? 'active' : ''}">Физ / Такт / Псих</button>
+      <button data-tab="skills" class="${currentTab === 'skills' ? 'active' : ''}">Навыки</button>
       <button data-tab="development" class="${currentTab === 'development' ? 'active' : ''}">План развития</button>
       <button data-tab="calendar" class="${currentTab === 'calendar' ? 'active' : ''}">Календарь</button>
       <button data-tab="stats" class="${currentTab === 'stats' ? 'active' : ''}">Статистика</button>
@@ -286,8 +286,7 @@ function renderPlayerCard(p) {
       <button data-tab="charts" class="${currentTab === 'charts' ? 'active' : ''}">Графики</button>
     </div>
 
-    <div id="tab-tech" class="tab-content ${currentTab === 'tech' ? 'active' : ''}">${renderTechTable(p)}</div>
-    <div id="tab-other" class="tab-content ${currentTab === 'other' ? 'active' : ''}">${renderOtherTable(p)}</div>
+    <div id="tab-skills" class="tab-content ${currentTab === 'skills' ? 'active' : ''}">${renderSkillsTab(p)}</div>
     <div id="tab-development" class="tab-content ${currentTab === 'development' ? 'active' : ''}">${renderDevelopmentPlan(p)}</div>
     <div id="tab-calendar" class="tab-content ${currentTab === 'calendar' ? 'active' : ''}">${renderPlayerCalendarTab(p)}</div>
     <div id="tab-stats" class="tab-content ${currentTab === 'stats' ? 'active' : ''}">${renderStats(p)}</div>
@@ -305,6 +304,7 @@ function renderPlayerCard(p) {
       if (btn.dataset.tab === 'charts')      drawTestCharts(p);
       if (btn.dataset.tab === 'calendar')    renderPlayerCalendarContent(p);
       if (btn.dataset.tab === 'development') renderDevelopmentPlanContent(p);
+      if (btn.dataset.tab === 'skills')      renderSkillsContent(p);
     });
   });
 
@@ -313,9 +313,10 @@ function renderPlayerCard(p) {
   if (currentTab === 'charts')      drawTestCharts(p);
   if (currentTab === 'calendar')    renderPlayerCalendarContent(p);
   if (currentTab === 'development') renderDevelopmentPlanContent(p);
+  if (currentTab === 'skills')      renderSkillsContent(p);
 }
 
-/* ===== Правка полей и перерисовка профиля ===== */
+/* ===== Поля и перерисовка ===== */
 
 function updateField(playerId, field, val) {
   const p = DB.players.find(x => x.id === playerId);
